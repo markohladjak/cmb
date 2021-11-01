@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>title</title>
+    <!-- <link rel="stylesheet" href="style.css">
+    <script src="script.js"></script> -->
+</head>
+
+<body>
+    <div id="status_bar">
+        <label>Transfer rate:</label>
+        <span id="tr_rate_pkt"></span>
+        <span> pkt/s</span>
+        <span id="tr_rate_data"></span>
+        <span> kbit/s</span>
+    </div>
+    <button onclick="onClickButton1()">Trigger async</button>
+    <button onclick="onClickButton2()">Abrakadabra</button>
+<script>
+    var count = 0;
+    var m_count = 0;
+
+    // Create WebSocket connection.
+    const socket = new WebSocket('ws://10.10.10.2:80/ws');  
+    // const socket = new WebSocket('ws://192.168.7.108:80/ws');
+
+    socket.binaryType = "arraybuffer";
+    // Connection opened
+    socket.addEventListener('open', function (event) {
+        socket.send('8888888888888888');
+    });
+
+    // Listen for messages
+    var kpt_count = 0;
+    socket.addEventListener('message', function (event) {
+        printData(event.data);
+
+        kpt_count++;
+
+        if (!count) {
+            count = event.data.byteLength;
+            m_count = 0;
+        }
+        else {
+            count += event.data.byteLength;
+            m_count++;
+        }
+    }, );
+
+    function printData(data) {
+        let dv = new DataView(data);
+
+        let tl = dv.getUint32(0, true);
+        let th = dv.getUint32(4, true);
+        let id = dv.getUint32(8, true);
+        let type = dv.getUint8(12);
+
+        let flags = dv.getUint32(16, true);
+        let identifier = dv.getUint32(20, true);
+        let data_length_code = dv.getUint8(24);
+
+        var d0 = dv.getUint8(25).toString(16).toUpperCase();
+        var d1 = dv.getUint8(26).toString(16).toUpperCase();
+        var d2 = dv.getUint8(27).toString(16).toUpperCase();
+        var d3 = dv.getUint8(28).toString(16).toUpperCase();
+        var d4 = dv.getUint8(29).toString(16).toUpperCase();
+        var d5 = dv.getUint8(30).toString(16).toUpperCase();
+        var d6 = dv.getUint8(31).toString(16).toUpperCase();
+        var d7 = dv.getUint8(19).toString(16).toUpperCase();
+
+        // // let data = new Int8Array(event.data.slice(9, 16+1));
+
+        // // var d = new Int8Array(event.data);
+
+        // // if (kpt_count < 1000)
+        // if (identifier == 0x180)
+        console.log(tl, th, id, type
+        , flags.toString(16).toUpperCase(), identifier.toString(16).toUpperCase()
+        , data_length_code, d0, d1,d2,d3,d4,d5,d6,d7);
+    }
+
+    socket.onerror = function(event) {
+        console.error("WebSocket error observed:", event);
+    };
+    // socket.add
+    // setInterval(myTimer, 1000);
+    // function myTimer() {
+    //     socket.send("27834y50v29834y50fj98234yut98d23y t4702h3084t g2083t 0972835 ho9u425");
+    // }
+
+    setInterval(function() {
+        var trp = document.getElementById("tr_rate_pkt");
+        var trd = document.getElementById("tr_rate_data");
+        trp.textContent = m_count;
+        var dr = count * 8 / 1024;
+        trd.textContent = dr.toFixed(1);
+
+        // console.log('mb received', count, m_count);
+        count = 0;
+        m_count = 0;
+    }, 1000);
+
+    function onClickButton1()
+    {
+        socket.send('Trigger async');
+    }
+
+    mscount = 0;
+
+    function onClickButton2()
+    {
+        var buffer = new ArrayBuffer(8);
+        var view   = new Int32Array(buffer);
+        socket.send("Abracadabra: " + mscount++);
+    }
+</script>
+</body>
+
+</html>
