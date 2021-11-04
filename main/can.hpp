@@ -4,8 +4,15 @@
 	
 #include "driver/twai.h"
 
+#define MY 1
+
+#ifdef MY
 #define TX_GPIO_NUM             GPIO_NUM_22
 #define RX_GPIO_NUM             GPIO_NUM_21
+#else
+#define TX_GPIO_NUM             GPIO_NUM_21
+#define RX_GPIO_NUM             GPIO_NUM_22
+#endif
 
 class can  
 {

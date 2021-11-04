@@ -7,6 +7,62 @@
     <!-- <link rel="stylesheet" href="style.css">
     <script src="script.js"></script> -->
 </head>
+<style>
+    table, th {
+      border:1px solid black;
+      background-color: gray;
+    }
+
+    td {
+        font-family: 'Courier New', Courier, monospace;
+		font-style: normal;
+		font-weight: bold;
+		font-size: 14px;
+    }
+
+    #twai_data_view {
+        font-family: 'Courier New', Courier, monospace;
+		font-style: normal;
+		font-weight: bold;
+		font-size: 14px;
+
+        color:green;
+
+        height: 500px;
+        overflow-y: scroll;
+    }
+
+    .toggle-button {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+    }
+
+    .toggle-button {
+        position: relative;
+        display: inline-block;
+        width: 100px;
+        height: 20px;
+        margin: 0;
+        vertical-align: top;
+        background: #ffffff;
+        border: 1px solid #bbc1e1;
+        border-radius: 30px;
+        outline: none;
+        cursor: pointer;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+    }    
+
+    .toggle-button:checked {
+        background-color: blue;
+    }
+
+</style>
+
+<script src="w3.js"></script>
+<script src="https://code.jquery.com/jquery-3.5.0.js"></script>
 
 <body>
     <div id="status_bar">
@@ -15,16 +71,77 @@
         <span> pkt/s</span>
         <span id="tr_rate_data"></span>
         <span> kbit/s</span>
+        <label>Packages Lost:</label>
+        <span id="tr_pakages_lost"></span>
     </div>
     <button onclick="onClickButton1()">Trigger async</button>
     <button onclick="onClickButton2()">Abrakadabra</button>
+    <!-- <button onclick="onClickButton3()">Show Stream</button> -->
+    <div style="display: inline-block;">
+        <input type="checkbox" class="toggle-button" onchange="onClickButton3(this)">
+        <label for="toggle-button" class="text">Show Stream</label>
+    </div>
+    <button onclick="onClickButton4()">Show All</button>
+
+    <div id="twai_data_view"> 
+        <div>
+            {{td_tl}} {{td_th}} {{td_id}} {{td_type}} {{td_dev_id}}
+            {{td_flags}} {{td_identifier}} {{td_data_length_code}}
+            {{td_d0}} {{td_d1}} {{td_d2}} {{td_d3}} 
+            {{td_d4}} {{td_d5}} {{td_d6}} {{td_d7}}
+        </div>
+    </div>
+
+    <table id="common_can_msg" style="width: 100%; height: 100%;">
+        <tr>
+            <th>TimeL</th>
+            <th>TimeH</th> 
+            <th>ID</th>
+            <th>Type</th>
+            <th>DevID</th>
+            <th>Flags</th>
+            <th>Identifier</th>
+            <th>Len</th>
+            <th>Data</th>
+          </tr>
+          <tr w3-repeat="pkgs">
+            <td>{{td_tl}}</td>
+            <td>{{td_th}}</td>
+            <td>{{td_id}}</td>
+            <td>{{td_type}}</td>
+            <td>{{td_dev_id}}</td>
+            <td>{{td_flags}}</td>
+            <td>{{td_identifier}}</td>
+            <td>{{td_data_length_code}}</td>
+            <td>{{td_d0}}&nbsp;{{td_d1}}&nbsp;{{td_d2}}&nbsp;{{td_d3}}&nbsp;{{td_d4}}&nbsp;{{td_d5}}&nbsp;{{td_d6}}&nbsp;{{td_d7}}</td>
+          </tr>
+    </table>
 <script>
-    var count = 0;
-    var m_count = 0;
+        var ShowStream = false;
+        var count = 0;
+        var m_count = 0;
+        var PackagesLost = 0;
+        var devLastPIDS = new Map();
+
+
+        // let dtr = { "pkgs" : [
+        //     {
+        //     "td_tl" : "1", "td_th" : "2", "td_id" : "3", "td_type" : "4", "td_dev_id" : "5",
+        //     "td_flags" : "6", "td_identifier" : "7", "td_data_length_code" : "8",
+        //     "td_d0" : "9", "td_d1" : "10", "td_d2" : "11", "td_d3" : "12", 
+        //     "td_d4" : "13", "td_d5" : "14", "td_d6" : "15", "td_d7" : "16"
+        //     } 
+        // ]};
+
+        // console.log(dtr["pkgs"].findIndex(item => item["td_identifier"] == 7));
+
+
 
     // Create WebSocket connection.
-    const socket = new WebSocket('ws://10.10.10.2:80/ws');  
-    // const socket = new WebSocket('ws://192.168.7.108:80/ws');
+    // const socket = new WebSocket('ws://10.10.10.2:80/ws');  
+    // const socket = new WebSocket('ws://192.168.0.111:80/ws');
+    // const socket = new WebSocket('ws://192.168.0.103:80/ws');
+    const socket = new WebSocket('ws://cmb.local:80/ws');
 
     socket.binaryType = "arraybuffer";
     // Connection opened
@@ -49,6 +166,9 @@
         }
     }, );
 
+    let dataRow = { "pkgs" : [
+        ]};
+
     function printData(data) {
         let dv = new DataView(data);
 
@@ -56,29 +176,53 @@
         let th = dv.getUint32(4, true);
         let id = dv.getUint32(8, true);
         let type = dv.getUint8(12);
+        let dev_id = dv.getUint8(13);
 
-        let flags = dv.getUint32(16, true);
-        let identifier = dv.getUint32(20, true);
+        let flags = dv.getUint32(16, true).toString(16).toUpperCase();
+        let identifier = dv.getUint32(20, true).toString(16).toUpperCase().padStart(8, '0');
         let data_length_code = dv.getUint8(24);
 
-        var d0 = dv.getUint8(25).toString(16).toUpperCase();
-        var d1 = dv.getUint8(26).toString(16).toUpperCase();
-        var d2 = dv.getUint8(27).toString(16).toUpperCase();
-        var d3 = dv.getUint8(28).toString(16).toUpperCase();
-        var d4 = dv.getUint8(29).toString(16).toUpperCase();
-        var d5 = dv.getUint8(30).toString(16).toUpperCase();
-        var d6 = dv.getUint8(31).toString(16).toUpperCase();
-        var d7 = dv.getUint8(19).toString(16).toUpperCase();
+        var d0 = dv.getUint8(25).toString(16).toUpperCase().padStart(2, '0');
+        var d1 = dv.getUint8(26).toString(16).toUpperCase().padStart(2, '0');;
+        var d2 = dv.getUint8(27).toString(16).toUpperCase().padStart(2, '0');;
+        var d3 = dv.getUint8(28).toString(16).toUpperCase().padStart(2, '0');;
+        var d4 = dv.getUint8(29).toString(16).toUpperCase().padStart(2, '0');;
+        var d5 = dv.getUint8(30).toString(16).toUpperCase().padStart(2, '0');;
+        var d6 = dv.getUint8(31).toString(16).toUpperCase().padStart(2, '0');;
+        var d7 = dv.getUint8(19).toString(16).toUpperCase().padStart(2, '0');;
 
-        // // let data = new Int8Array(event.data.slice(9, 16+1));
+        let row = {
+            "td_tl" : tl, "td_th" : th, "td_id" : id, "td_type" : type, "td_dev_id" : dev_id,
+            "td_flags" : flags, "td_identifier" : identifier, "td_data_length_code" : data_length_code,
+            "td_d0" : d0, "td_d1" : d1, "td_d2" : d2, "td_d3" : d3, 
+            "td_d4" : d4, "td_d5" : d5, "td_d6" : d6, "td_d7" : d7
+            };
 
-        // // var d = new Int8Array(event.data);
+        i = dataRow["pkgs"].findIndex(item => item["td_identifier"] == identifier);
+        if (i != -1)
+            dataRow["pkgs"][i] = row;
+        else
+            dataRow["pkgs"].push(row);
 
-        // // if (kpt_count < 1000)
-        // if (identifier == 0x180)
-        console.log(tl, th, id, type
-        , flags.toString(16).toUpperCase(), identifier.toString(16).toUpperCase()
-        , data_length_code, d0, d1,d2,d3,d4,d5,d6,d7);
+        if (devLastPIDS.has(dev_id))
+            PackagesLost += id - devLastPIDS.get(dev_id) - 1;
+
+        devLastPIDS.set(dev_id, id);
+
+        if (!ShowStream) 
+            return; 
+
+        data_view = document.getElementById("twai_data_view");
+        data_row = document.getElementById(identifier);
+
+        if (!data_row) {
+            let block = document.createElement("div");
+            block.id = identifier;
+            block.innerHTML += `{{td_identifier}} {{td_data_length_code}}
+                {{td_d0}}&nbsp;{{td_d1}}&nbsp;{{td_d2}}&nbsp;{{td_d3}}&nbsp;{{td_d4}}&nbsp;{{td_d5}}&nbsp;{{td_d6}}&nbsp;{{td_d7}}`;
+            data_view.appendChild(block);
+        }
+        w3.displayObject(identifier, row);
     }
 
     socket.onerror = function(event) {
@@ -91,15 +235,19 @@
     // }
 
     setInterval(function() {
-        var trp = document.getElementById("tr_rate_pkt");
+        var trp = $( "#tr_rate_pkt" )[0];
         var trd = document.getElementById("tr_rate_data");
+        var pl = $( "#tr_pakages_lost" )[0];
+        
         trp.textContent = m_count;
         var dr = count * 8 / 1024;
         trd.textContent = dr.toFixed(1);
 
+        pl.textContent = PackagesLost;
         // console.log('mb received', count, m_count);
         count = 0;
         m_count = 0;
+        PackagesLost = 0;
     }, 1000);
 
     function onClickButton1()
@@ -111,10 +259,25 @@
 
     function onClickButton2()
     {
-        var buffer = new ArrayBuffer(8);
+        var buffer = new ArrayBuffer(32);
         var view   = new Int32Array(buffer);
-        socket.send("Abracadabra: " + mscount++);
+        
+        for (i=0;i<8;i++)
+        view[i] = 0xFFFFFFFF;
+
+        socket.send(buffer);
     }
+
+    function onClickButton3(element)
+    {
+        ShowStream = element.checked;
+    }
+
+    function onClickButton4()
+    {
+        w3.displayObject("common_can_msg", dataRow);
+    }
+
 </script>
 </body>
 

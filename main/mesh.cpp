@@ -21,6 +21,8 @@ mesh::status_t mesh::_status = mesh::status_t::UNKNOWN;
 // string mesh::_router_pw = "12345678";
 string mesh::_router_ssid = "DiamandNC";
 string mesh::_router_pw = "nodesAdmin";
+// string mesh::_router_ssid = "TP-Link_982C";
+// string mesh::_router_pw = "33188805";
 
 int	mesh::_router_chennel = 1;
 
@@ -91,19 +93,84 @@ void mesh::stop() {
     deinit();
 }
 
-void mesh::send(string &msg) {
-	xSemaphoreTake(_send_mutex, portMAX_DELAY);
+void mesh::send(uint8_t *data, uint16_t len) {
+	// xSemaphoreTake(_send_mutex, portMAX_DELAY);
 
-    mesh_data_t data;
-    data.data = tx_buf;
-    data.size = sizeof(tx_buf);
-    data.proto = MESH_PROTO_BIN;
-    data.tos = MESH_TOS_P2P;
+    if (!is_connected()) {
+        // vTaskDelay(1);
+        // xSemaphoreGive(_send_mutex);
+        return;
+    }
+    static mesh_data_t msg;
+    msg.data = data;
+    msg.size = len;
+    msg.proto = MESH_PROTO_BIN;
+    msg.tos = MESH_TOS_P2P;
     
-    // err = esp_mesh_send(&route_table[i], &data, MESH_DATA_P2P | MESH_DATA_NONBLOCK, NULL, 0);
+    // static mesh_addr_t addrmc = {
+    //     .addr = {0x01, 0x00, 0x5E, 0x7F, 0xFF, 0xFF}
+    //     };
+
+    static mesh_addr_t addr = {
+        .addr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+        };
+
+    // static mesh_addr_t addr2 = {
+    //     .addr = {0x3c, 0x61, 0x05, 0x16, 0xd0, 0x61}
+    // };
+
+    // static bool done = false;
+    // static mesh_opt_t opt;
+    // if (!done) {
+    //     ESP_ERROR_CHECK(esp_mesh_set_group_id(&addr2, 1));
+    //     opt.type = MESH_OPT_SEND_GROUP;
+    //     opt.val = (uint8_t*)(&addr2);
+    //     opt.len = 1;
+
+    //     done = true;
+
+    // }
+
+
+    // ESP_LOGE("TAG", "send error: %d", 
+    // auto err = esp_mesh_send(NULL, &msg, MESH_DATA_P2P, NULL, 0);
+    auto err = esp_mesh_send(&addr, &msg, MESH_DATA_P2P | MESH_DATA_NONBLOCK, NULL, 0);
+
+    // auto err = esp_mesh_send(&addrmc, &msg, MESH_DATA_GROUP, &opt, 1);
+
+    if (err) {
+        // ESP_LOGE(MESH_TAG, "esp_mesh_send error: %s", esp_err_to_name(err));
+        // vTaskDelay(1);
+    }
+
 // MESH_MPS
 // esp_mesh_recv()
-	xSemaphoreGive(_send_mutex);
+	// xSemaphoreGive(_send_mutex);
+}
+
+bool mesh::receive(uint8_t *data, uint16_t *len)
+{
+    esp_err_t err;
+    mesh_addr_t from;
+//    int send_count = 0;
+    mesh_data_t msg;
+    msg.data = data;
+    msg.size = *len;//MSG_SIZE;
+    int flags = 0;
+
+    err = esp_mesh_recv(&from, &msg, portMAX_DELAY, &flags, NULL, 0);
+
+    *len = msg.size;
+
+    if (err != ESP_OK) {
+        ESP_LOGE(MESH_TAG, "esp_mesh_send error: %s", esp_err_to_name(err));
+        return false;
+        // vTaskDelay(1);
+    }
+
+    // ESP_LOGE(MESH_TAG, "data from mesh: size: %d", msg.size);
+
+    return true;
 }
 
 void mesh::init() {
@@ -375,6 +442,11 @@ void mesh::ip_event_handler(void *arg, esp_event_base_t event_base, int32_t even
     ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
     ESP_LOGI(MESH_TAG, "<IP_EVENT_STA_GOT_IP>IP:" IPSTR, IP2STR(&event->ip_info.ip));
 
+    if (esp_mesh_is_root()) {
+        _is_root = true;
+        if (_is_root_callback_funct)
+            _is_root_callback_funct();
+    }
 }
 
 uint64_t mesh::self_address(uint16_t device_num) {

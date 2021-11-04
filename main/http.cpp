@@ -117,7 +117,7 @@ esp_err_t http::request_handler(httpd_req_t *req)
         return ret;
     }
 
-    ESP_LOGI(TAG, "Got packet type: %d  with message: %s", ws_pkt.type, ws_pkt.payload);
+    // ESP_LOGI(TAG, "Got packet type: %d  with message: %s", ws_pkt.type, ws_pkt.payload);
     
     _wscs[httpd_req_to_sockfd(req)] = true;
     update_ready_state();

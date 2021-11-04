@@ -7,6 +7,7 @@
 
 typedef void (*_layer_changed_callback_funct_t)(int);
 typedef void (*_is_root_callback_funct_t)();
+typedef void (*_on_connected_callback_funct_t)(bool);
 
 class mesh  
 {
@@ -65,13 +66,17 @@ public:
 	static void start();
 	static void stop();
 
-	static void send(std::string &msg);
+	static void send(uint8_t *data, uint16_t len);
+	static bool receive(uint8_t *data, uint16_t *len);
 
 	static void mesh_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 	static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 	static void OnLayerChangedCallbackRegister(_layer_changed_callback_funct_t funct);
 	static void OnIsRootCallbackRegister(_is_root_callback_funct_t funct);
+
+	static bool is_root() { return _is_root; }
+	static bool is_connected() { return _is_mesh_connected; }
 
 private:
 	void send_msg(std::string &msg);
