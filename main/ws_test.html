@@ -20,16 +20,40 @@
 		font-size: 14px;
     }
 
-    #twai_data_view {
+    /* #devices_view_container {
+    } */
+
+    .data_block {
+        font-family: 'Courier New', Courier, monospace;
+		font-style: normal;
+		font-weight: bold;
+		font-size: 14px;
+    }
+
+    .twai_data_view_style {
+        display: inline-block;
+        
+        margin: 20px;
+        padding: 5px;
+        color: black;
+        background-color: rgb(233, 235, 252);
+        border: rebeccapurple 3px solid; 
+
+        vertical-align: top;
+    }
+
+    #msg_to_send {
         font-family: 'Courier New', Courier, monospace;
 		font-style: normal;
 		font-weight: bold;
 		font-size: 14px;
 
-        color:green;
-
-        height: 500px;
-        overflow-y: scroll;
+        margin-left: 20px;
+        color: black;
+        background-color: rgb(233, 235, 252);
+        border: rebeccapurple 3px solid; 
+        
+        width: 300px;
     }
 
     .toggle-button {
@@ -73,6 +97,8 @@
         <span> kbit/s</span>
         <label>Packages Lost:</label>
         <span id="tr_pakages_lost"></span>
+        <label>Status:</label>
+        <span id="tr_net_status"></span>
     </div>
     <button onclick="onClickButton1()">Trigger async</button>
     <button onclick="onClickButton2()">Abrakadabra</button>
@@ -83,16 +109,23 @@
     </div>
     <button onclick="onClickButton4()">Show All</button>
 
-    <div id="twai_data_view"> 
+    <div class="data_block">
         <div>
-            {{td_tl}} {{td_th}} {{td_id}} {{td_type}} {{td_dev_id}}
-            {{td_flags}} {{td_identifier}} {{td_data_length_code}}
-            {{td_d0}} {{td_d1}} {{td_d2}} {{td_d3}} 
-            {{td_d4}} {{td_d5}} {{td_d6}} {{td_d7}}
+            <input id="msg_to_send" type="text" value="123AA678 8 10 1A 2B 7C AD EF FF 44">
+            <button onclick="onClickSend()">Send</button>
+        </div>
+
+        <div id="devices_view_container">
+            <template id="twai_data_view_template">
+                <div class="twai_data_view_style">
+                    <div class="device_id_field" style="height: 30px; width: 200px;"></div>
+                    <div class="list_view"></div>
+                </div>
+            </template>
         </div>
     </div>
 
-    <table id="common_can_msg" style="width: 100%; height: 100%;">
+    <table id="common_can_msg" style="width: 100%; height: 100%; display: none;">
         <tr>
             <th>TimeL</th>
             <th>TimeH</th> 
@@ -147,6 +180,9 @@
     // Connection opened
     socket.addEventListener('open', function (event) {
         socket.send('8888888888888888');
+
+        let status = $("#tr_net_status")[0];
+        status.textContent = "connected";
     });
 
     // Listen for messages
@@ -165,6 +201,13 @@
             m_count++;
         }
     }, );
+
+    socket.onerror = function(event) {
+        console.error("WebSocket error observed:", event);
+
+        let status = $("#tr_net_status")[0];
+        status.textContent = "disconnected";
+    };
 
     let dataRow = { "pkgs" : [
         ]};
@@ -206,28 +249,41 @@
 
         if (devLastPIDS.has(dev_id))
             PackagesLost += id - devLastPIDS.get(dev_id) - 1;
-
         devLastPIDS.set(dev_id, id);
 
         if (!ShowStream) 
             return; 
 
-        data_view = document.getElementById("twai_data_view");
-        data_row = document.getElementById(identifier);
+        devices_view = document.getElementById("devices_view_container");
+        data_view_name = `twai_data_view${dev_id}`;
+        data_view = document.getElementById(data_view_name);
+
+        if (!data_view) {
+            vtemplate = document.querySelector('#twai_data_view_template');
+            dv = vtemplate.content.querySelector("div");
+            view = document.importNode(dv, true);
+            view.id = data_view_name;
+            devices_view.appendChild(view);
+            data_view = view.querySelector(".list_view");
+            dvname = view.querySelector(".device_id_field");
+            dvname.innerHTML = data_view_name;
+        }
+
+        targetID = ''.concat(dev_id, '_', identifier);
+
+        data_row = document.getElementById(targetID);
 
         if (!data_row) {
             let block = document.createElement("div");
-            block.id = identifier;
-            block.innerHTML += `{{td_identifier}} {{td_data_length_code}}
-                {{td_d0}}&nbsp;{{td_d1}}&nbsp;{{td_d2}}&nbsp;{{td_d3}}&nbsp;{{td_d4}}&nbsp;{{td_d5}}&nbsp;{{td_d6}}&nbsp;{{td_d7}}`;
+            block.id = targetID;
+            block.innerHTML += "{{td_identifier}} {{td_data_length_code}}";
+            for (let i = 0; i < 8; ++i)
+                block.innerHTML += `&nbsp;{{td_d${i}}}`;
             data_view.appendChild(block);
         }
-        w3.displayObject(identifier, row);
+        w3.displayObject(targetID, row);
     }
 
-    socket.onerror = function(event) {
-        console.error("WebSocket error observed:", event);
-    };
     // socket.add
     // setInterval(myTimer, 1000);
     // function myTimer() {
@@ -277,6 +333,46 @@
     {
         w3.displayObject("common_can_msg", dataRow);
     }
+
+    var sended_msd_id = 0;
+
+    function onClickSend()
+    {
+        msg = $("#msg_to_send")[0].value;
+
+        // const re = /\s/
+        data = msg.split(' ');
+
+        buff = new ArrayBuffer(32);
+        dv = new DataView(buff);
+
+        dv.setUint32(0, 0, true);                       // tl
+        dv.setUint32(4, 0, true);                       // th
+        dv.setUint32(8, sended_msd_id++, true);         // id
+        dv.setUint8(12, 8);                             // type
+        dv.setUint8(13, 254);                           // dev_id
+
+        dv.setUint32(16, 0, true);                      // flags
+        dv.setUint32(20, parseInt(data[0], 16), true);   // identifier
+        dv.setUint8(24, parseInt(data[1]));            // data_length_code
+
+
+        for (let i = 0; i < data[1]; i++) {
+            pos = 2 + i;
+            if (i < 7)
+                dv.setUint8(25 + i, parseInt(data[pos], 16));
+            else
+                dv.setUint8(19, parseInt(data[pos], 16));
+        }
+ 
+        console.log(data, dv);
+        socket.send(buff);
+    }
+
+    $("#msg_to_send").keypress(function(e){
+        if (e.keyCode == 13)
+            onClickSend();
+    });
 
 </script>
 </body>

@@ -243,9 +243,9 @@ void http::send_async(uint8_t *data, size_t len)
         ESP_LOGE("cmb", "send_async error %d", err);
 }
 
-void http::receive(uint8_t *data, size_t *len)
+bool http::receive(uint8_t *data, size_t *len, TickType_t wait)
 {
-    xQueueReceive(_rx_task_queue, data, portMAX_DELAY);
+    return xQueueReceive(_rx_task_queue, data, wait);
 }
 
 esp_err_t http::queue_work(void (*work_fn)(void *arg))

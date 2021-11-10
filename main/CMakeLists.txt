@@ -1,4 +1,4 @@
 
-idf_component_register(SRCS "http.cpp" "twai_network_example_master_main.c" "main.cpp" "can.cpp" "mesh.cpp"
-"http.cpp"
+idf_component_register(SRCS "http.cpp" "main.cpp" "can.cpp" "mesh.cpp"
+"http.cpp" "twai_filter.cpp" "dtp_message.cpp"
                        INCLUDE_DIRS ".")

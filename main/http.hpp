@@ -59,7 +59,7 @@ public:
 	static bool is_ready();
 	static bool send(uint8_t *data, size_t len);
 	static void send_async(uint8_t *data, size_t len);
-	static void receive(uint8_t *data, size_t *len);
+	static bool receive(uint8_t *data, size_t *len, TickType_t wait);
 
 	static esp_err_t queue_work(void (*work_fn)(void *arg));
 };

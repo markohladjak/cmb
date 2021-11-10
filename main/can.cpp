@@ -42,7 +42,9 @@ void can::stop()
 
 void can::transmit(twai_message_t &msg)
 {
-    twai_transmit(&msg, portMAX_DELAY);
+    auto err = twai_transmit(&msg, 0);
+    // if (err)
+    //     printf("twai_transmit: %s\n", esp_err_to_name(err));
 }
 
 esp_err_t can::receive(twai_message_t &msg)

@@ -23,6 +23,8 @@ string mesh::_router_ssid = "DiamandNC";
 string mesh::_router_pw = "nodesAdmin";
 // string mesh::_router_ssid = "TP-Link_982C";
 // string mesh::_router_pw = "33188805";
+// string mesh::_router_ssid = "BV6000";
+// string mesh::_router_pw = "1234567890";
 
 int	mesh::_router_chennel = 1;
 
@@ -34,12 +36,16 @@ bool mesh::_is_mesh_initialized = false;
 int mesh::_max_device_count = 100;
 int mesh::_max_connection = 4;  // 10 MAX
 
+bool mesh::_allow_channel_switch = true;
+
 int mesh::_mesh_layer = -1;
 
 const uint8_t mesh::MESH_ID[6] = { 0x44, 0x44, 0x44, 0x44, 0x44, 0x44 };
 
 _layer_changed_callback_funct_t mesh::_layer_changed_callback_funct = NULL;
 _is_root_callback_funct_t mesh::_is_root_callback_funct = NULL;
+_is_connected_callback_funct_t mesh::_is_connected_callback_funct = NULL;
+_is_disconnected_callback_funct_t mesh::_is_disconnected_callback_funct = NULL;
 
 bool mesh::_is_running = false;
 
@@ -94,11 +100,11 @@ void mesh::stop() {
 }
 
 void mesh::send(uint8_t *data, uint16_t len) {
-	// xSemaphoreTake(_send_mutex, portMAX_DELAY);
+	xSemaphoreTake(_send_mutex, portMAX_DELAY);
 
     if (!is_connected()) {
         // vTaskDelay(1);
-        // xSemaphoreGive(_send_mutex);
+        xSemaphoreGive(_send_mutex);
         return;
     }
     static mesh_data_t msg;
@@ -123,9 +129,9 @@ void mesh::send(uint8_t *data, uint16_t len) {
     // static mesh_opt_t opt;
     // if (!done) {
     //     ESP_ERROR_CHECK(esp_mesh_set_group_id(&addr2, 1));
-    //     opt.type = MESH_OPT_SEND_GROUP;
-    //     opt.val = (uint8_t*)(&addr2);
-    //     opt.len = 1;
+        // opt.type = MESH_OPT_SEND_GROUP;
+        // opt.val = (uint8_t*)(&addr2);
+        // opt.len = 1;
 
     //     done = true;
 
@@ -145,7 +151,7 @@ void mesh::send(uint8_t *data, uint16_t len) {
 
 // MESH_MPS
 // esp_mesh_recv()
-	// xSemaphoreGive(_send_mutex);
+	xSemaphoreGive(_send_mutex);
 }
 
 bool mesh::receive(uint8_t *data, uint16_t *len)
@@ -205,7 +211,9 @@ void mesh::init() {
     memcpy((uint8_t *) &cfg.mesh_id, MESH_ID, 6);
     /* router */
     cfg.channel = _router_chennel;
+    cfg.allow_channel_switch = _allow_channel_switch;
     cfg.router.ssid_len = _router_ssid.size();
+
     memcpy((uint8_t *) &cfg.router.ssid, _router_ssid.c_str(), cfg.router.ssid_len);
     memcpy((uint8_t *) &cfg.router.password, _router_pw.c_str(), _router_pw.size());
     /* mesh softAP */
@@ -213,6 +221,7 @@ void mesh::init() {
     cfg.mesh_ap.max_connection = _max_connection;
     memcpy((uint8_t *) &cfg.mesh_ap.password, _mesh_pw.c_str(), _mesh_pw.size());
     ESP_ERROR_CHECK(esp_mesh_set_config(&cfg));
+
 
     _is_mesh_initialized = true;
 }
@@ -316,6 +325,13 @@ void mesh::mesh_event_handler(void *arg, esp_event_base_t event_base, int32_t ev
         if (esp_mesh_is_root()) {
             esp_netif_dhcpc_start(netif_sta);
         }
+        if (esp_mesh_is_root()) {
+            _is_root = true;
+            if (_is_root_callback_funct)
+                _is_root_callback_funct();
+        }
+        if (_is_connected_callback_funct)
+            _is_connected_callback_funct();
     }
     break;
     case MESH_EVENT_PARENT_DISCONNECTED: {
@@ -325,6 +341,11 @@ void mesh::mesh_event_handler(void *arg, esp_event_base_t event_base, int32_t ev
                  disconnected->reason);
 
         set_status(status_t::DISCONNECTED);
+
+        if (_is_disconnected_callback_funct) {
+            _is_root = false;
+            _is_disconnected_callback_funct();
+        }
     }
     break;
     case MESH_EVENT_LAYER_CHANGE: {
@@ -442,11 +463,11 @@ void mesh::ip_event_handler(void *arg, esp_event_base_t event_base, int32_t even
     ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
     ESP_LOGI(MESH_TAG, "<IP_EVENT_STA_GOT_IP>IP:" IPSTR, IP2STR(&event->ip_info.ip));
 
-    if (esp_mesh_is_root()) {
-        _is_root = true;
-        if (_is_root_callback_funct)
-            _is_root_callback_funct();
-    }
+    // if (esp_mesh_is_root()) {
+    //     _is_root = true;
+    //     if (_is_root_callback_funct)
+    //         _is_root_callback_funct();
+    // }
 }
 
 uint64_t mesh::self_address(uint16_t device_num) {
@@ -483,4 +504,12 @@ void mesh::OnLayerChangedCallbackRegister(_layer_changed_callback_funct_t funct)
 
 void mesh::OnIsRootCallbackRegister(_is_root_callback_funct_t funct){
 	_is_root_callback_funct = funct;
+}
+
+void mesh::OnIsConnectedCallbackRegister(_is_connected_callback_funct_t funct){
+	_is_connected_callback_funct = funct;
+}
+
+void mesh::OnIsDisconnectedCallbackRegister(_is_connected_callback_funct_t funct){
+	_is_disconnected_callback_funct = funct;
 }

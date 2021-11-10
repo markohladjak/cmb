@@ -7,7 +7,8 @@
 
 typedef void (*_layer_changed_callback_funct_t)(int);
 typedef void (*_is_root_callback_funct_t)();
-typedef void (*_on_connected_callback_funct_t)(bool);
+typedef void (*_is_connected_callback_funct_t)();
+typedef void (*_is_disconnected_callback_funct_t)();
 
 class mesh  
 {
@@ -30,7 +31,7 @@ class mesh
 	static bool _is_mesh_connected;
 	static int _max_device_count;
 	static int _max_connection;
-
+	static bool _allow_channel_switch;
 	static int _mesh_layer;
 
 	static uint64_t _node_addr_mask;
@@ -39,7 +40,9 @@ class mesh
 
 	static _layer_changed_callback_funct_t _layer_changed_callback_funct;
 	static _is_root_callback_funct_t _is_root_callback_funct;
-
+	static _is_connected_callback_funct_t _is_connected_callback_funct;
+	static _is_disconnected_callback_funct_t _is_disconnected_callback_funct;
+	
 	static void init();
 	static void deinit();
 	static void set_status(status_t status);
@@ -74,6 +77,8 @@ public:
 
 	static void OnLayerChangedCallbackRegister(_layer_changed_callback_funct_t funct);
 	static void OnIsRootCallbackRegister(_is_root_callback_funct_t funct);
+	static void OnIsConnectedCallbackRegister(_is_connected_callback_funct_t funct);
+	static void OnIsDisconnectedCallbackRegister(_is_disconnected_callback_funct_t funct);
 
 	static bool is_root() { return _is_root; }
 	static bool is_connected() { return _is_mesh_connected; }
