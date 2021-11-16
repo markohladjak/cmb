@@ -28,7 +28,7 @@ extern "C" void app_main(void);
 #define TX_MESH_QUEUE_SIZE 32
 #define SEND_WORK_TIME 500
 
-#define DEVICE_ID 99
+#define DEVICE_ID 48
 
 #define TASK_CONTROL_DELAY 10
 
@@ -220,6 +220,19 @@ void net_rx_task(void *arg)
     vTaskDelete(NULL);
 }
 
+void uart_rx_task(void *arg)
+{
+    uint8_t msg[MSG_SIZE];
+
+    while (1) 
+    {
+        _uart->read(msg);
+
+        printf("uart -> ");
+        print_message(*((dtp_message*)msg));
+    }
+}
+
 bool twai_msg_receive(twai_message_t &msg)
 {
     memset((void*)&msg, 0, sizeof(twai_message_t));
@@ -306,6 +319,11 @@ void start_web_rx_task()
 void start_net_rx_task()
 {
     xTaskCreatePinnedToCore(net_rx_task, "NetRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+}
+
+void start_uart_rx_task()
+{
+    xTaskCreatePinnedToCore(uart_rx_task, "UartRX", 4096, NULL, 8, NULL, tskNO_AFFINITY);
 }
 
 void stop_web_rx_task()
@@ -479,4 +497,5 @@ void app_main(void)
 
     start_twai_rx_task();
     start_net_rx_task();
+    start_uart_rx_task();
 }

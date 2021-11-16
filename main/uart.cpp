@@ -21,7 +21,8 @@ uart::uart(int port_num, int tx_pin, int rx_pin)
     _tx_break = false;
     _rx_break = false;
 
-    _config.baud_rate = 115200;
+    // _config.baud_rate = 115200;
+    _config.baud_rate = 921600;
     _config.data_bits = UART_DATA_8_BITS;
     _config.parity = UART_PARITY_DISABLE;
     _config.stop_bits = UART_STOP_BITS_1;
@@ -79,8 +80,12 @@ void uart::tx_task(void *arg)
         {
             bytes_left = MSG_SIZE;
 
-            while( bytes_left > 0)
-                bytes_left -= uart_write_bytes(o->_port_num, msg, bytes_left);
+            while( bytes_left > 0) {
+                int b = uart_write_bytes(o->_port_num, msg, bytes_left);
+
+                bytes_left -= b;
+                ESP_LOGE("MUART", "write %d", b);
+            }
         } 
         else
             vTaskDelay(1);
@@ -99,9 +104,19 @@ void uart::rx_task(void *arg)
     int bytes_left = 0;
     int pkts = 0;
 
-    while (o->_rx_break) {
-        bytes += uart_read_bytes(o->_port_num, msg + bytes, RX_BUF_SIZE, 100 / portTICK_RATE_MS);
-        
+    while (!o->_rx_break) {
+        int c = uart_read_bytes(o->_port_num, msg + bytes, RX_BUF_SIZE, 100 / portTICK_RATE_MS);
+
+        if (c <= 0) {
+            vTaskDelay(1);
+            continue;
+        }
+
+        bytes += c;
+
+        ESP_LOGE("MUART", "read %d", bytes);
+
+
         pkts = bytes / MSG_SIZE;
         bytes_left %= MSG_SIZE;
 
