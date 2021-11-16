@@ -1,6 +1,7 @@
 #include "mesh.hpp"
 #include "can.hpp"
 #include "http.hpp"
+#include "uart.hpp"
 #include <map>
 #include <atomic>
 
@@ -27,9 +28,12 @@ extern "C" void app_main(void);
 #define TX_MESH_QUEUE_SIZE 32
 #define SEND_WORK_TIME 500
 
-#define DEVICE_ID 0
+#define DEVICE_ID 99
 
 #define TASK_CONTROL_DELAY 10
+
+#define UART_TXD_PIN (GPIO_NUM_4)
+#define UART_RXD_PIN (GPIO_NUM_5)
 
 // static twai_message_t ping_message = {.flags = 0, .identifier = 0x180, .data_length_code = 8,
 //                                             .data = {0xAA, 0x02 , 0 , 0x40 ,0x10 ,0 ,0 ,0}};
@@ -62,6 +66,8 @@ const esp_timer_create_args_t periodic_timer_args = {
 };
 
 esp_timer_handle_t periodic_timer;
+
+uart *_uart;
 
 static const char *TAG = "cmb";
 
@@ -129,6 +135,8 @@ void net_tx(dtp_message& msg)
     // if (xQueueSend(_tx_mesh_queue, &msg, portMAX_DELAY) != pdPASS)
         // ESP_LOGE(TAG, "_tx_web_queue full");
     ;
+
+    _uart->send((uint8_t*)&msg, MSG_SIZE);
 }
 
 void twai_rx_task(void* arg) 
@@ -141,7 +149,7 @@ void twai_rx_task(void* arg)
     vTaskDelete(NULL);
 }
 
-void web_rx_task(void *arg)
+void ui_rx_task(void *arg)
 {
     uint8_t _rx_buf[MESH_MPS] = { 0 };
 
@@ -292,7 +300,7 @@ void start_twai_rx_task()
 void start_web_rx_task()
 {
     _web_rx_task_run = true;
-    xTaskCreatePinnedToCore(web_rx_task, "WebRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+    xTaskCreatePinnedToCore(ui_rx_task, "WebRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
 }
 
 void start_net_rx_task()
@@ -432,7 +440,7 @@ void on_init()
 void init()
 {
     while (!DEVICE_ID) {
-        ESP_LOGE("DEVICE_ID not set...");
+        ESP_LOGE(TAG, "DEVICE_ID not set...");
         TaskDelay(1000);
     }
 
@@ -465,6 +473,9 @@ void app_main(void)
 
     mesh::start();
     can::start();
+
+    _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
+    _uart->start();
 
     start_twai_rx_task();
     start_net_rx_task();
