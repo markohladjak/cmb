@@ -4,32 +4,33 @@
 	
 #include "driver/twai.h"
 
-#define MY 1
-
-#ifdef MY
-#define TX_GPIO_NUM             GPIO_NUM_22
-#define RX_GPIO_NUM             GPIO_NUM_21
-#else
-#define TX_GPIO_NUM             GPIO_NUM_21
-#define RX_GPIO_NUM             GPIO_NUM_22
-#endif
-
 class can  
 {
-	private:
+	static gpio_num_t _tx_gpio_num;
+	static gpio_num_t _rx_gpio_num;
 
-	public:
+	static twai_timing_config_t *t_config;
+	static twai_filter_config_t f_config;
+	static twai_general_config_t g_config;
 
-		can();
-		~can();
-		
-		static twai_timing_config_t t_config;
-		static twai_filter_config_t f_config;
-		static twai_general_config_t g_config;
+public:
+	enum speed_t {
+		_25KBITS,
+		_50KBITS,
+		_100KBITS,
+		_125KBITS,
+		_250KBITS,
+		_500KBITS,
+		_800KBITS,
+		_1MBITS
+	};
 
-		static void start();
-		static void stop();
-		static void transmit(twai_message_t &msg);
-		static esp_err_t receive(twai_message_t &msg);
+	can(gpio_num_t tx_gpio_num, gpio_num_t rx_gpio_num);
+	~can();
+
+	static void start(speed_t speed = speed_t::_500KBITS);
+	static void stop();
+	static void transmit(twai_message_t &msg);
+	static esp_err_t receive(twai_message_t &msg);
 };
 #endif

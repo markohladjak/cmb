@@ -68,6 +68,7 @@ const esp_timer_create_args_t periodic_timer_args = {
 esp_timer_handle_t periodic_timer;
 
 uart *_uart;
+can can(GPIO_NUM_21, GPIO_NUM_22);
 
 static const char *TAG = "cmb";
 
@@ -490,7 +491,7 @@ void app_main(void)
     init();
 
     mesh::start();
-    can::start();
+    can::start(can::speed_t::_500KBITS);
 
     _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
     _uart->start();
