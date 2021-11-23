@@ -7,12 +7,6 @@
 
 #include <atomic>
 
-// struct task_ctx {
-// 	int port;
-// 	QueueHandle_t _tx_queue;
-// 	QueueHandle_t _rx_queue;
-// };
-
 class uart  
 {
 private:
