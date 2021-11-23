@@ -2,6 +2,8 @@
 #include "can.hpp"
 #include "http.hpp"
 #include "uart.hpp"
+#include "thread_ctl.hpp"
+
 #include <map>
 #include <atomic>
 
@@ -22,6 +24,9 @@
 #include "esp_log.h"
 
 extern "C" void app_main(void);
+
+using namespace rutils;
+
 
 #define MSG_SIZE 32
 #define TX_WEB_QUEUE_SIZE 32
@@ -53,8 +58,8 @@ std::atomic<bool> _twai_rx_task_run(true);
 
 // Test Mode Members
 bool _can_test_mode = 0;
-#define TEST_MSG_SEND_PERION 5000
-std::atomic<uint32_t> _test_msg_send_period(TEST_MSG_SEND_PERION);
+#define TEST_MSG_SEND_PERIOD 5000
+std::atomic<uint32_t> _test_msg_send_period(TEST_MSG_SEND_PERIOD);
 
 uint32_t _can_msg_id = 0;
 
@@ -82,6 +87,13 @@ void on_net_disconnected();
 void print_twai_msg(twai_message_t &msg);
 void print_message(dtp_message &data);
 char* sprint_twai_msg(twai_message_t &msg, char* out_buf);
+
+
+void twai_rx_task(thread_funct_args& args);
+
+
+thread_ctl twai_thread(twai_rx_task, false, "TwaiRX");
+
 
 void TaskDelay(uint16_t ms)
 {
@@ -140,14 +152,12 @@ void net_tx(dtp_message& msg)
     _uart->send((uint8_t*)&msg, MSG_SIZE);
 }
 
-void twai_rx_task(void* arg) 
+void twai_rx_task(thread_funct_args& args) 
 {
-    while (_twai_rx_task_run) 
+    while (!args._exit_signal) 
     {
         twai_rx();
     }
-            
-    vTaskDelete(NULL);
 }
 
 void ui_rx_task(void *arg)
@@ -307,8 +317,9 @@ void start_twai_rx_task()
         ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
         ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, _test_msg_send_period));
     }
-    else
-        xTaskCreatePinnedToCore(twai_rx_task, "TwaiRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+    else 
+        // xTaskCreatePinnedToCore(twai_rx_task, "TwaiRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+        twai_thread.run();
 }
 
 void start_web_rx_task()
