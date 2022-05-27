@@ -13,6 +13,8 @@ static const int RX_BUF_SIZE = 1024;
 #define TX_QUEUE_SIZE 32
 #define RX_QUEUE_SIZE 32
 
+#define BEGIN_DATA_COMMAND "DATA"
+
 uart::uart(int port_num, int tx_pin, int rx_pin)
     : _port_num(port_num)
     , _tx_pin(rx_pin)
@@ -78,13 +80,15 @@ void uart::tx_task(void *arg)
     while (!o->_tx_break) {
         if (xQueueReceive(o->_tx_queue, msg, 100 / portTICK_RATE_MS ) == pdPASS)
         {
+            int bytes = 0;
             bytes_left = MSG_SIZE;
 
             while( bytes_left > 0) {
-                int b = uart_write_bytes(o->_port_num, msg, bytes_left);
+                bytes = uart_write_bytes(o->_port_num, msg + bytes, bytes_left);
 
-                bytes_left -= b;
-                ESP_LOGE("MUART", "write %d", b);
+                bytes_left -= bytes;
+
+                ESP_LOGE("MUART", "write %d", bytes);
             }
         } 
         else
@@ -99,13 +103,21 @@ void uart::tx_task(void *arg)
 void uart::rx_task(void *arg)
 {
     auto o = (uart*)arg;
-    auto msg = new uint8_t[RX_BUF_SIZE + MSG_SIZE + 1];
+    auto buf = new uint8_t[RX_BUF_SIZE + MSG_SIZE + 1] {0};
     int bytes = 0;
     int bytes_left = 0;
     int pkts = 0;
+    bool exec = false;
 
     while (!o->_rx_break) {
-        int c = uart_read_bytes(o->_port_num, msg + bytes, RX_BUF_SIZE, 100 / portTICK_RATE_MS);
+        int c = uart_read_bytes(o->_port_num, buf + bytes, RX_BUF_SIZE, 100 / portTICK_RATE_MS);
+        
+        if (!exec) {
+            buf[strlen(BEGIN_DATA_COMMAND)] = 0;
+            if (memcmp(buf, BEGIN_DATA_COMMAND, strlen(BEGIN_DATA_COMMAND)) == 0)
+                exec = true;
+            continue;
+        }
 
         if (c <= 0) {
             vTaskDelay(1);
@@ -121,17 +133,17 @@ void uart::rx_task(void *arg)
         bytes_left %= MSG_SIZE;
 
         for (int i = 0; i < pkts; ++i)
-            xQueueSend(o->_rx_queue, msg + MSG_SIZE * 0, 0);
+            xQueueSend(o->_rx_queue, buf + MSG_SIZE * i, 0);
 
         if (pkts) {
-            memcpy(msg, msg + (bytes - bytes_left), bytes_left);
+            memcpy(buf, buf + (bytes - bytes_left), bytes_left);
             bytes = bytes_left;
         }
             // ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
             // ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
     }
 
-    delete[] msg;
+    delete[] buf;
 
     o->_rx_break = false;
 

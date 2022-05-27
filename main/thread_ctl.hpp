@@ -32,7 +32,7 @@ public:
 		STOPPED
 	};
 
-	thread_ctl(thread_funct funct, bool run_on_create = true, char* name = nullptr, void *args = nullptr
+	thread_ctl(thread_funct funct, bool run_on_create = true, const char* name = nullptr, void *args = nullptr
 				, int stack_size = 1024, bool wait_for_start = false, int priority = 1);
 	~thread_ctl();
 
@@ -41,7 +41,7 @@ public:
 
 private:
 	STATUS _status;
-	char* _name;
+	const char* _name;
 
 	thread_funct _funct;
 

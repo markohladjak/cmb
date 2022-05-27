@@ -1,8 +1,10 @@
-#include "thread_ctl.hpp"  
+#include "thread_ctl.hpp"
+
+#include "freertos/task.h"
 
 namespace rutils {
 
-thread_ctl::thread_ctl(thread_funct funct, bool run_on_create, char* name, void *args, int stack_size
+thread_ctl::thread_ctl(thread_funct funct, bool run_on_create, const char* name, void *args, int stack_size
 					, bool wait_for_start, int priority)
 {
 	_funct = funct;

@@ -179,7 +179,7 @@
     socket.binaryType = "arraybuffer";
     // Connection opened
     socket.addEventListener('open', function (event) {
-        socket.send('8888888888888888');
+        // socket.send('8888888888888888');
 
         let status = $("#tr_net_status")[0];
         status.textContent = "connected";
@@ -238,12 +238,15 @@
             "td_tl" : tl, "td_th" : th, "td_id" : id, "td_type" : type, "td_dev_id" : dev_id,
             "td_flags" : flags, "td_identifier" : identifier, "td_data_length_code" : data_length_code,
             "td_d0" : d0, "td_d1" : d1, "td_d2" : d2, "td_d3" : d3, 
-            "td_d4" : d4, "td_d5" : d5, "td_d6" : d6, "td_d7" : d7
+            "td_d4" : d4, "td_d5" : d5, "td_d6" : d6, "td_d7" : d7,
+            "td_count" : 1
             };
 
         i = dataRow["pkgs"].findIndex(item => item["td_identifier"] == identifier);
-        if (i != -1)
+        if (i != -1) {
+            row["td_count"] = dataRow["pkgs"][i]["td_count"]+1;
             dataRow["pkgs"][i] = row;
+        }
         else
             dataRow["pkgs"].push(row);
 
@@ -279,6 +282,7 @@
             block.innerHTML += "{{td_identifier}} {{td_data_length_code}}";
             for (let i = 0; i < 8; ++i)
                 block.innerHTML += `&nbsp;{{td_d${i}}}`;
+            block.innerHTML += "&nbsp;&nbsp;&nbsp;{{td_count}}";
             data_view.appendChild(block);
         }
         w3.displayObject(targetID, row);

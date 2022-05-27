@@ -19,14 +19,14 @@ mesh::status_t mesh::_status = mesh::status_t::UNKNOWN;
 
 // string mesh::_router_ssid = "Tenda_0AD898";
 // string mesh::_router_pw = "12345678";
-string mesh::_router_ssid = "DiamandNC";
-string mesh::_router_pw = "nodesAdmin";
+// string mesh::_router_ssid = "DiamandNC";
+// string mesh::_router_pw = "nodesAdmin";
 // string mesh::_router_ssid = "TP-Link_982C";
 // string mesh::_router_pw = "33188805";
-// string mesh::_router_ssid = "BV6000";
-// string mesh::_router_pw = "1234567890";
+string mesh::_router_ssid = "BV6000";
+string mesh::_router_pw = "1234567890";
 
-int	mesh::_router_chennel = 1;
+int	mesh::_router_chennel = 0;
 
 string mesh::_mesh_pw = "34578456";
 
@@ -141,6 +141,7 @@ void mesh::send(uint8_t *data, uint16_t len) {
     // ESP_LOGE("TAG", "send error: %d", 
     // auto err = esp_mesh_send(NULL, &msg, MESH_DATA_P2P, NULL, 0);
     auto err = esp_mesh_send(&addr, &msg, MESH_DATA_P2P | MESH_DATA_NONBLOCK, NULL, 0);
+    // auto err = esp_mesh_send(NULL, &msg, MESH_DATA_P2P | MESH_DATA_NONBLOCK , NULL, 0);
 
     // auto err = esp_mesh_send(&addrmc, &msg, MESH_DATA_GROUP, &opt, 1);
 

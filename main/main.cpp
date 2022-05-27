@@ -13,6 +13,8 @@
 #include "esp_mesh.h"
 #include "mdns.h"
 
+#include "driver/gpio.h"
+
 #include "driver/twai.h"
 
 #include "inttypes.h"
@@ -27,13 +29,15 @@ extern "C" void app_main(void);
 
 using namespace rutils;
 
+#define DEVICE_ID 54
+
+#define CF_UART_ENABLED 1
+#define CF_MESH_ENABLED 1
 
 #define MSG_SIZE 32
 #define TX_WEB_QUEUE_SIZE 32
 #define TX_MESH_QUEUE_SIZE 32
 #define SEND_WORK_TIME 500
-
-#define DEVICE_ID 48
 
 #define TASK_CONTROL_DELAY 10
 
@@ -58,7 +62,7 @@ std::atomic<bool> _twai_rx_task_run(true);
 
 // Test Mode Members
 bool _can_test_mode = 0;
-#define TEST_MSG_SEND_PERIOD 5000
+#define TEST_MSG_SEND_PERIOD 1000
 std::atomic<uint32_t> _test_msg_send_period(TEST_MSG_SEND_PERIOD);
 
 uint32_t _can_msg_id = 0;
@@ -87,6 +91,7 @@ void on_net_disconnected();
 void print_twai_msg(twai_message_t &msg);
 void print_message(dtp_message &data);
 char* sprint_twai_msg(twai_message_t &msg, char* out_buf);
+void blink_config(int count);
 
 
 void twai_rx_task(thread_funct_args& args);
@@ -328,6 +333,11 @@ void start_web_rx_task()
     xTaskCreatePinnedToCore(ui_rx_task, "WebRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
 }
 
+void stop_web_rx_task()
+{
+    _web_rx_task_run = false;
+}
+
 void start_net_rx_task()
 {
     xTaskCreatePinnedToCore(net_rx_task, "NetRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
@@ -338,17 +348,14 @@ void start_uart_rx_task()
     xTaskCreatePinnedToCore(uart_rx_task, "UartRX", 4096, NULL, 8, NULL, tskNO_AFFINITY);
 }
 
-void stop_web_rx_task()
-{
-    _web_rx_task_run = true;
-}
-
 void on_self_is_root()
 {
 }
 
 void on_net_connected()
 {
+    blink_config(mesh::is_root()?1:2);
+
     if (!mesh::is_root())
         return;
 
@@ -360,6 +367,8 @@ void on_net_connected()
 
 void on_net_disconnected()
 {
+    blink_config(0);
+
     if (!mesh::is_root())
         return;
 
@@ -478,14 +487,16 @@ void init()
 
     esp_log_level_set("*", ESP_LOG_VERBOSE);
 
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+#ifdef CF_MESH_ENABLED
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&config));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    // ESP_ERROR_CHECK(esp_mesh_set_6m_rate(true));
+    ESP_ERROR_CHECK(esp_mesh_set_6m_rate(true));
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
@@ -495,19 +506,58 @@ void init()
     mesh::OnIsRootCallbackRegister(on_self_is_root);
     mesh::OnIsConnectedCallbackRegister(on_net_connected);
     mesh::OnIsDisconnectedCallbackRegister(on_net_disconnected);
+#endif
+}
+
+void blink_config(int count)
+{
+	static int _count;
+	static TaskHandle_t task = NULL;;
+	static bool exit_request = false;
+
+	_count = count;
+
+    #define GPIO_NUM GPIO_NUM_2
+
+    gpio_reset_pin(GPIO_NUM);
+    gpio_set_direction(GPIO_NUM, GPIO_MODE_OUTPUT);	
+
+	if (task)
+		return;
+
+
+	xTaskCreatePinnedToCore([](void *) {
+		while(!exit_request) {
+			for (int i=0; i<_count; i++) {
+				TaskDelay(1000 / 2 - 1000 / 4);
+                gpio_set_level(GPIO_NUM, 1);
+				TaskDelay(1000 / 4);
+                gpio_set_level(GPIO_NUM, 0);
+			}
+
+			TaskDelay(2000);
+		}
+
+		exit_request = false;
+		vTaskDelete(NULL);
+	}, "MT1", 1000, NULL, 1, &task, tskNO_AFFINITY);
 }
 
 void app_main(void)
 {
     init();
 
+#ifdef CF_MESH_ENABLED
     mesh::start();
-    can::start(can::speed_t::_500KBITS);
+    start_net_rx_task();
+#endif
 
+#ifdef CF_UART_ENABLED
     _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
     _uart->start();
-
-    start_twai_rx_task();
-    start_net_rx_task();
     start_uart_rx_task();
+#endif
+
+    can::start(can::speed_t::_500KBITS);
+    start_twai_rx_task();
 }
