@@ -32,5 +32,7 @@ public:
 	static void stop();
 	static void transmit(twai_message_t &msg);
 	static esp_err_t receive(twai_message_t &msg);
+
+	static int get_msgs_to_rx();
 };
 #endif

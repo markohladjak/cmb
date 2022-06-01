@@ -16,6 +16,9 @@ can::can(gpio_num_t tx_gpio_num, gpio_num_t rx_gpio_num)
 
     g_config.tx_io = tx_gpio_num;
     g_config.rx_io = rx_gpio_num;
+
+    g_config.tx_queue_len = 46;
+    g_config.rx_queue_len = 46;
 }
 	
 can::~can()
@@ -70,4 +73,12 @@ void can::transmit(twai_message_t &msg)
 esp_err_t can::receive(twai_message_t &msg)
 {
     return twai_receive(&msg, portMAX_DELAY);
+}
+
+int can::get_msgs_to_rx()
+{
+    twai_status_info_t info;
+    twai_get_status_info(&info);
+
+    return info.msgs_to_rx;
 }

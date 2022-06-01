@@ -29,13 +29,13 @@ extern "C" void app_main(void);
 
 using namespace rutils;
 
-#define DEVICE_ID 54
+#define DEVICE_ID 99
 
 #define CF_UART_ENABLED 1
 #define CF_MESH_ENABLED 1
 
 #define MSG_SIZE 32
-#define TX_WEB_QUEUE_SIZE 32
+#define TX_WEB_QUEUE_SIZE 64
 #define TX_MESH_QUEUE_SIZE 32
 #define SEND_WORK_TIME 500
 
@@ -62,10 +62,11 @@ std::atomic<bool> _twai_rx_task_run(true);
 
 // Test Mode Members
 bool _can_test_mode = 0;
-#define TEST_MSG_SEND_PERIOD 1000
+#define TEST_MSG_SEND_PERIOD 500
 std::atomic<uint32_t> _test_msg_send_period(TEST_MSG_SEND_PERIOD);
 
 uint32_t _can_msg_id = 0;
+uint8_t _msgs_buff[MESH_MPS];
 
 void twai_rx(void *arg = nullptr);
 
@@ -97,7 +98,7 @@ void blink_config(int count);
 void twai_rx_task(thread_funct_args& args);
 
 
-thread_ctl twai_thread(twai_rx_task, false, "TwaiRX");
+thread_ctl twai_thread(twai_rx_task, false, "TwaiRX", NULL, 16384, false, 9);
 
 
 void TaskDelay(uint16_t ms)
@@ -154,7 +155,7 @@ void net_tx(dtp_message& msg)
         // ESP_LOGE(TAG, "_tx_web_queue full");
     ;
 
-    _uart->send((uint8_t*)&msg, MSG_SIZE);
+    // _uart->send((uint8_t*)&msg, MSG_SIZE);
 }
 
 void twai_rx_task(thread_funct_args& args) 
@@ -184,7 +185,7 @@ void ui_rx_task(void *arg)
 
 void net_rx_task(void *arg)
 {
-    uint16_t len = 32;
+    uint16_t len;
     int data_size = 0, pcount = 0;
     uint8_t msg_buf[MESH_MPS];
     int pkt_lost = 0;
@@ -195,42 +196,49 @@ void net_rx_task(void *arg)
         while (!mesh::receive(msg_buf, &len)) 
             vTaskDelay(1);
     
-        auto msg = (msg_can_data*)msg_buf;
+        int msg_count = len / MSG_SIZE;
+        int msg_n = 0;
 
-        if (msg->get_type() != DTPT_CAN_DATA)
-            continue;
+        while (msg_count--) 
+        {
+            auto msg = (msg_can_data*)(msg_buf + msg_n++ * MSG_SIZE);
 
-        auto dev_id = msg->get_dev_id();
-        auto id = msg->get_id();
+            if (msg->get_type() != DTPT_CAN_DATA)
+                continue;
 
-        // printf("mt: %d    dev_id: %d\n", msg->get_type(), dev_id);
+            auto dev_id = msg->get_dev_id();
+            auto id = msg->get_id();
 
-        if (mesh::is_root())
-            web_tx(*msg);
+            // printf("mt: %d    dev_id: %d\n", msg->get_type(), dev_id);
 
-        if (msg->get_type() == DTPT_CAN_DATA && dev_id != DEVICE_ID) {
-            msg->twai_msg.data[7] = ((uint8_t*)&(msg->twai_msg.flags))[3];
-            msg->twai_msg.flags &= 1;
-    
-            can::transmit(msg->twai_msg);
+            if (mesh::is_root())
+                web_tx(*msg);
 
-            pkt_lost += (id - last_pkt_ids[dev_id] - 1);
-            last_pkt_ids[dev_id] = id;
+            if (msg->get_type() == DTPT_CAN_DATA && dev_id != DEVICE_ID) {
+                msg->twai_msg.data[7] = ((uint8_t*)&(msg->twai_msg.flags))[3];
+                msg->twai_msg.flags &= 1;
+        
+                can::transmit(msg->twai_msg);
+
+                pkt_lost += (id - last_pkt_ids[dev_id] - 1);
+                last_pkt_ids[dev_id] = id;
+                // pkt_lost += (id - last_pkt_ids[dev_id] - 1);
+                // last_pkt_ids[dev_id] = id;
 
 {
-            data_size += len;
-            pcount++;
+                data_size += MSG_SIZE;
+                pcount++;
 
-            auto t0 = esp_timer_get_time();
-            static int64_t tl = t0;
+                auto t0 = esp_timer_get_time();
+                static int64_t tl = t0;
 
-            if (t0 - tl > 1000000){
-                ESP_LOGW("net_rx", " count: %d     rate: %d      pkt_lost: %d", pcount, data_size, pkt_lost);
-                data_size = pcount = pkt_lost = 0;
-                tl = t0;
-            }        
+                if (t0 - tl > 1000000){
+                    ESP_LOGW("net_rx", " count: %d     rate: %d      pkt_lost: %d", pcount, data_size, pkt_lost);
+                    data_size = pcount = pkt_lost = 0;
+                    tl = t0;
+                }        
 }
-
+            }
         }
     }
     vTaskDelete(NULL);
@@ -270,35 +278,56 @@ bool twai_msg_receive(twai_message_t &msg)
 
 void twai_rx(void* arg)
 {
-    msg_can_data msg;
-    msg.set_dev_id(DEVICE_ID);
-
-    if (twai_msg_receive(msg.twai_msg))
+    int i = 0;
+    for (int n = 1; n--; ++i)
     {
-        if (msg.twai_msg.data_length_code == 8)
-            ((uint8_t*)(&msg.twai_msg.flags))[3] = msg.twai_msg.data[7];
+        msg_can_data &msg = *new(_msgs_buff + i * MSG_SIZE) msg_can_data();
+
+        if (!twai_msg_receive(msg.twai_msg))
+            break;
+
+        // if (twai_in_filter(msg.twai_msg))
+
+        msg.set_dev_id(DEVICE_ID);
         msg.set_id(_can_msg_id++);
 
-        if (twai_in_filter(msg.twai_msg))
-            mesh::send((uint8_t*)&msg, MSG_SIZE);
+        if (msg.twai_msg.data_length_code == 8)
+            ((uint8_t*)(&msg.twai_msg.flags))[3] = msg.twai_msg.data[7];
+        
 
+        if (!i)
+            n = _can_test_mode ? 0 : can::get_msgs_to_rx();
+    }
+
+    if (!i) {
+        vTaskDelay(1);
+        return;
+    }
+
+    mesh::send((uint8_t*)_msgs_buff, i * MSG_SIZE);
 
 {
         auto t0 = esp_timer_get_time();
         static int64_t tl = t0;
         static int pcount = 0;
+        static int msg_count = 0;
+        static int out_of_buff = 0;
+        static int buff_msg_max = 0;
         pcount++;
+        msg_count += i;
+        out_of_buff += i == 46 ? 1 : 0;
+        if (buff_msg_max < i)
+            buff_msg_max = i;
 
         if (t0 - tl > 1000000){
-            ESP_LOGW("twai_rx", "count: %d       [%s]", pcount, sprint_twai_msg(msg.twai_msg, nullptr));
+            ESP_LOGW("twai_rx", "pkt_count: %d   msg_count: %d  buff_msg_max: %d   out_of_buff: %d   [%s]", pcount, msg_count, buff_msg_max, out_of_buff, sprint_twai_msg(((msg_can_data*)_msgs_buff)->twai_msg, nullptr));
             pcount = 0;
             tl = t0;
+            out_of_buff = 0;
+            msg_count = 0;
+            buff_msg_max = 0;
         }
 }
-
-    } 
-    else
-        vTaskDelay(1);
 }
 
 // void mesh_send_task(void *arg)
@@ -335,12 +364,12 @@ void start_web_rx_task()
 
 void stop_web_rx_task()
 {
-    _web_rx_task_run = false;
+    _web_rx_task_run = true;
 }
 
 void start_net_rx_task()
 {
-    xTaskCreatePinnedToCore(net_rx_task, "NetRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+    xTaskCreatePinnedToCore(net_rx_task, "NetRX", 16384, NULL, 7, NULL, tskNO_AFFINITY);
 }
 
 void start_uart_rx_task()
@@ -487,16 +516,14 @@ void init()
 
     esp_log_level_set("*", ESP_LOG_VERBOSE);
 
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-
-#ifdef CF_MESH_ENABLED
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&config));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_mesh_set_6m_rate(true));
+    // ESP_ERROR_CHECK(esp_mesh_set_6m_rate(true));
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
@@ -506,7 +533,6 @@ void init()
     mesh::OnIsRootCallbackRegister(on_self_is_root);
     mesh::OnIsConnectedCallbackRegister(on_net_connected);
     mesh::OnIsDisconnectedCallbackRegister(on_net_disconnected);
-#endif
 }
 
 void blink_config(int count)
@@ -547,17 +573,13 @@ void app_main(void)
 {
     init();
 
-#ifdef CF_MESH_ENABLED
     mesh::start();
-    start_net_rx_task();
-#endif
+    can::start(can::speed_t::_500KBITS);
 
-#ifdef CF_UART_ENABLED
     _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
     _uart->start();
-    start_uart_rx_task();
-#endif
 
-    can::start(can::speed_t::_500KBITS);
+    start_net_rx_task();
+    start_uart_rx_task();
     start_twai_rx_task();
 }

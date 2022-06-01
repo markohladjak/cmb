@@ -140,8 +140,23 @@ void mesh::send(uint8_t *data, uint16_t len) {
 
     // ESP_LOGE("TAG", "send error: %d", 
     // auto err = esp_mesh_send(NULL, &msg, MESH_DATA_P2P, NULL, 0);
-    auto err = esp_mesh_send(&addr, &msg, MESH_DATA_P2P | MESH_DATA_NONBLOCK, NULL, 0);
-    // auto err = esp_mesh_send(NULL, &msg, MESH_DATA_P2P | MESH_DATA_NONBLOCK , NULL, 0);
+    // auto err = esp_mesh_send(&addr, &msg, MESH_DATA_P2P | MESH_DATA_NONBLOCK, NULL, 0);
+
+    int err;
+
+    if (_is_root) {
+        int route_table_size = esp_mesh_get_routing_table_size() * 6;
+        mesh_addr_t route_table[route_table_size];
+
+    	esp_mesh_get_routing_table((mesh_addr_t *) &route_table, route_table_size, &route_table_size);
+        
+        for (int i=0; i<route_table_size; ++i)
+            err = esp_mesh_send(&route_table[i], &msg, MESH_DATA_P2P , NULL, 0);
+
+    }
+    else
+    
+    err = esp_mesh_send(NULL, &msg, MESH_DATA_P2P , NULL, 0);
 
     // auto err = esp_mesh_send(&addrmc, &msg, MESH_DATA_GROUP, &opt, 1);
 
