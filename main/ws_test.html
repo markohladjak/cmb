@@ -83,6 +83,9 @@
         background-color: blue;
     }
 
+    textarea {
+        resize: vertical;
+    }
 </style>
 
 <script src="w3.js"></script>
@@ -111,7 +114,21 @@
 
     <div class="data_block">
         <div>
-            <input id="msg_to_send" type="text" value="123AA678 8 10 1A 2B 7C AD EF FF 44">
+            <textarea id="msg_to_send" rows="7">
+43F 8 10 60 61 ff 00 00 00 00
+43F 8 14 67 61 ff 00 00 00 00
+43F 8 14 66 61 ff 00 00 00 00
+43F 8 14 65 61 ff 00 00 00 00
+
+43F 8 11 68 61 ff 00 00 00 00
+43F 8 12 68 61 ff 00 00 00 00
+43F 8 13 68 61 ff 00 00 00 00
+43F 8 14 68 61 ff 00 00 00 00
+43F 8 15 68 61 ff 00 00 00 00
+43F 8 16 68 61 ff 00 00 00 00
+43F 8 17 68 61 ff 00 00 00 00
+            </textarea>
+            <!-- <input id="msg_to_send" type="text" value="123AA678 8 10 1A 2B 7C AD EF FF 44"> -->
             <button onclick="onClickSend()">Send</button>
         </div>
 
@@ -175,6 +192,8 @@
     // const socket = new WebSocket('ws://192.168.0.111:80/ws');
     // const socket = new WebSocket('ws://192.168.0.103:80/ws');
     const socket = new WebSocket('ws://cmb.local:80/ws');
+    // const socket = new WebSocket('ws://192.168.134.140:80/ws');
+    
 
     socket.binaryType = "arraybuffer";
     // Connection opened
@@ -235,6 +254,7 @@
         var d7 = dv.getUint8(19).toString(16).toUpperCase().padStart(2, '0');;
 
         let row = {
+            "row_id": dev_id + "_" + identifier,
             "td_tl" : tl, "td_th" : th, "td_id" : id, "td_type" : type, "td_dev_id" : dev_id,
             "td_flags" : flags, "td_identifier" : identifier, "td_data_length_code" : data_length_code,
             "td_d0" : d0, "td_d1" : d1, "td_d2" : d2, "td_d3" : d3, 
@@ -242,7 +262,7 @@
             "td_count" : 1
             };
 
-        i = dataRow["pkgs"].findIndex(item => item["td_identifier"] == identifier);
+        i = dataRow["pkgs"].findIndex(item => item["row_id"] === dev_id + "_" + identifier);
         if (i != -1) {
             row["td_count"] = dataRow["pkgs"][i]["td_count"]+1;
             dataRow["pkgs"][i] = row;
@@ -340,9 +360,19 @@
 
     var sended_msd_id = 0;
 
+    function getLineNumber(textarea, indicator)
+    {
+        return textarea.value.substr(0, textarea.selectionStart).split("\n").length;
+    }
+
     function onClickSend()
     {
-        msg = $("#msg_to_send")[0].value;
+        const text = $("#msg_to_send").val();
+        const curet = $("#msg_to_send")[0].selectionStart;
+        const row = text.substr(0, curet).split("\n").length;
+        const rows = text.split("\n");
+
+        msg = rows[row-1];
 
         // const re = /\s/
         data = msg.split(' ');
@@ -374,8 +404,13 @@
     }
 
     $("#msg_to_send").keypress(function(e){
-        if (e.keyCode == 13)
+        if (e.keyCode == 13 && e.shiftKey)
+            return;
+
+        if (e.keyCode == 13) {
             onClickSend();
+            e.preventDefault();
+        }
     });
 
 </script>

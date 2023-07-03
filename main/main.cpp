@@ -29,7 +29,7 @@ extern "C" void app_main(void);
 
 using namespace rutils;
 
-#define DEVICE_ID 99
+#define DEVICE_ID 31
 
 #define CF_UART_ENABLED 1
 #define CF_MESH_ENABLED 1
@@ -103,7 +103,7 @@ thread_ctl twai_thread(twai_rx_task, false, "TwaiRX", NULL, 16384, false, 9);
 
 void TaskDelay(uint16_t ms)
 {
-    vTaskDelay(1 * ms / portTICK_RATE_MS);
+    vTaskDelay(1 * ms / portTICK_PERIOD_MS);
     // vTaskDelay(1 * 1000 / ( ( TickType_t ) 1000 / 100 ));
     
 }
@@ -117,7 +117,7 @@ void web_send_work(void *) {
     {
         auto t0 = esp_timer_get_time();
 
-        if ( xQueueReceive(_tx_web_queue, data, count_down / 1000 / portTICK_RATE_MS ) == pdPASS)
+        if ( xQueueReceive(_tx_web_queue, data, count_down / 1000 / portTICK_PERIOD_MS ) == pdPASS)
             http::send_async(data, MSG_SIZE);
 
         count_down -= esp_timer_get_time() - t0;
@@ -230,7 +230,7 @@ void net_rx_task(void *arg)
                 pcount++;
 
                 auto t0 = esp_timer_get_time();
-                static int64_t tl = t0;
+                static int64_t tl = 0;
 
                 if (t0 - tl > 1000000){
                     ESP_LOGW("net_rx", " count: %d     rate: %d      pkt_lost: %d", pcount, data_size, pkt_lost);
@@ -279,14 +279,18 @@ bool twai_msg_receive(twai_message_t &msg)
 void twai_rx(void* arg)
 {
     int i = 0;
-    for (int n = 1; n--; ++i)
+    for (int n = 1; n--;)
     {
         msg_can_data &msg = *new(_msgs_buff + i * MSG_SIZE) msg_can_data();
 
         if (!twai_msg_receive(msg.twai_msg))
             break;
 
-        // if (twai_in_filter(msg.twai_msg))
+        if (!i)
+            n = _can_test_mode ? 0 : can::get_msgs_to_rx();
+
+        if (!twai_in_filter(msg.twai_msg))
+            continue;
 
         msg.set_dev_id(DEVICE_ID);
         msg.set_id(_can_msg_id++);
@@ -294,9 +298,7 @@ void twai_rx(void* arg)
         if (msg.twai_msg.data_length_code == 8)
             ((uint8_t*)(&msg.twai_msg.flags))[3] = msg.twai_msg.data[7];
         
-
-        if (!i)
-            n = _can_test_mode ? 0 : can::get_msgs_to_rx();
+        i++;
     }
 
     if (!i) {
@@ -434,7 +436,7 @@ void print_state_report()
     static int64_t tl = t0;
 
     if (t0 - tl > 1000000){
-        ESP_LOGW(TAG, "heep size: %d    is ISR: %d       rate: %d", esp_get_free_heap_size(), xPortInIsrContext(), c);
+        ESP_LOGW(TAG, "heep size: %lu    is ISR: %d       rate: %d", esp_get_free_heap_size(), xPortInIsrContext(), c);
         c = 0;
         tl = t0;
     }
@@ -500,7 +502,7 @@ void on_init()
     ESP_LOGW("on_init", "size of msg_can_data: %d", sizeof(msg_can_data));
     ESP_LOGI("on_init", "size of dtp_message: %d", sizeof(dtp_message));
     ESP_LOGI("on_init", "size of twai_message_t: %d", sizeof(twai_message_t));
-    ESP_LOGI("on_init", "portTICK_RATE_MS: %d", 1 * 1000 / portTICK_RATE_MS);
+    ESP_LOGI("on_init", "portTICK_RATE_MS: %lu", 1 * 1000 / portTICK_PERIOD_MS);
     ESP_LOGI("", "Task priorities: %d", configMAX_PRIORITIES);
     // ESP_LOGI("", "Task priorities: %d", esp_meh);
 }
@@ -527,7 +529,9 @@ void init()
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
+                                    // ??????? Wrong parameter order
     _tx_web_queue = xQueueCreate(MSG_SIZE, TX_WEB_QUEUE_SIZE);
+
     // _tx_mesh_queue = xQueueCreate(MSG_SIZE, TX_MESH_QUEUE_SIZE);
 
     mesh::OnIsRootCallbackRegister(on_self_is_root);
@@ -574,7 +578,7 @@ void app_main(void)
     init();
 
     mesh::start();
-    can::start(can::speed_t::_500KBITS);
+    can::start(can::speed_t::_100KBITS);
 
     _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
     _uart->start();

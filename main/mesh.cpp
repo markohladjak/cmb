@@ -23,7 +23,7 @@ mesh::status_t mesh::_status = mesh::status_t::UNKNOWN;
 // string mesh::_router_pw = "nodesAdmin";
 // string mesh::_router_ssid = "TP-Link_982C";
 // string mesh::_router_pw = "33188805";
-string mesh::_router_ssid = "BV6000";
+string mesh::_router_ssid = "BV8800";
 string mesh::_router_pw = "1234567890";
 
 int	mesh::_router_chennel = 0;
@@ -63,6 +63,11 @@ static mesh_addr_t mesh_parent_addr;
 
 #define MESH_TAG "mesh"
 
+#ifndef MAC2STR
+#define MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
+#define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
+#define COMPACT_MACSTR "%02x%02x%02x%02x%02x%02x"
+#endif
 
 mesh::mesh() {
 }
@@ -86,7 +91,7 @@ void mesh::start() {
     /* set the network active duty cycle. (default:10, -1, MESH_PS_NETWORK_DUTY_APPLIED_ENTIRE) */
     ESP_ERROR_CHECK(esp_mesh_set_network_duty_cycle(CONFIG_MESH_PS_NWK_DUTY, CONFIG_MESH_PS_NWK_DUTY_DURATION, CONFIG_MESH_PS_NWK_DUTY_RULE));
 #endif
-    ESP_LOGI(MESH_TAG, "mesh starts successfully, heap:%d, %s<%d>%s, ps:%d\n",  esp_get_minimum_free_heap_size(),
+    ESP_LOGI(MESH_TAG, "mesh starts successfully, heap:%lu, %s<%d>%s, ps:%d\n",  esp_get_minimum_free_heap_size(),
              esp_mesh_is_root_fixed() ? "root fixed" : "root not fixed",
              esp_mesh_get_topology(), esp_mesh_get_topology() ? "(chain)":"(tree)", esp_mesh_is_ps_enabled());
 
@@ -469,7 +474,7 @@ void mesh::mesh_event_handler(void *arg, esp_event_base_t event_base, int32_t ev
     }
     break;
     default:
-        ESP_LOGI(MESH_TAG, "unknown id:%d", event_id);
+        ESP_LOGI(MESH_TAG, "unknown id:%ld", event_id);
         break;
     }
 }

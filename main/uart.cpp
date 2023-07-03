@@ -78,7 +78,7 @@ void uart::tx_task(void *arg)
     int bytes_left;
 
     while (!o->_tx_break) {
-        if (xQueueReceive(o->_tx_queue, msg, 100 / portTICK_RATE_MS ) == pdPASS)
+        if (xQueueReceive(o->_tx_queue, msg, 100 / portTICK_PERIOD_MS ) == pdPASS)
         {
             int bytes = 0;
             bytes_left = MSG_SIZE;
@@ -110,7 +110,7 @@ void uart::rx_task(void *arg)
     bool exec = false;
 
     while (!o->_rx_break) {
-        int c = uart_read_bytes(o->_port_num, buf + bytes, RX_BUF_SIZE, 100 / portTICK_RATE_MS);
+        int c = uart_read_bytes(o->_port_num, buf + bytes, RX_BUF_SIZE, 100 / portTICK_PERIOD_MS);
         
         if (!exec) {
             buf[strlen(BEGIN_DATA_COMMAND)] = 0;

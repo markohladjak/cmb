@@ -105,6 +105,11 @@ void http::disconnect_handler(void* arg, esp_event_base_t event_base, int32_t ev
 
 esp_err_t http::request_handler(httpd_req_t *req)
 {
+    if (req->method == HTTP_GET) {
+        ESP_LOGI(TAG, "Handshake done, the new connection was opened");
+        return ESP_OK;
+    }
+
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
     ws_pkt.payload = _rx_buf;
@@ -113,7 +118,7 @@ esp_err_t http::request_handler(httpd_req_t *req)
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, RX_SIZE);
     
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "httpd_ws_recv_frame failed with %d", ret);
+        ESP_LOGE(TAG, "httpd_ws_recv_frame failed to get frame len with %d", ret);
         return ret;
     }
 
@@ -199,7 +204,7 @@ bool http::send(uint8_t *data, size_t len)
 
             if (t0 - tl > 1000000){
                 auto t1 = esp_timer_get_time();
-                ESP_LOGW("MMM", "httpd_ws_send_frame_async delta: %" PRIu64 "  wk: %d", t1 - t0, (int32_t)works_count);
+                ESP_LOGW("MMM", "httpd_ws_send_frame_async delta: %" PRIu64 "  wk: %ld", t1 - t0, (int32_t)works_count);
                 tl = t0;
             }
 
@@ -240,7 +245,7 @@ void http::send_async(uint8_t *data, size_t len)
     esp_err_t err = httpd_ws_send_frame_async(_server, _wscs.begin()->first, pkt);
 
     if (err != ESP_OK) 
-        ESP_LOGE("cmb", "send_async error %d", err);
+        ESP_LOGE("cmb", "send_async error %s", esp_err_to_name(err));
 }
 
 bool http::receive(uint8_t *data, size_t *len, TickType_t wait)
