@@ -193,7 +193,7 @@
     // const socket = new WebSocket('ws://192.168.0.111:80/ws');
     // const socket = new WebSocket('ws://192.168.0.103:80/ws');
     const socket = new WebSocket('ws://cmb.local:80/ws');
-    // const socket = new WebSocket('ws://192.168.134.140:80/ws');
+    // const socket = new WebSocket('ws://192.168.178.130:80/ws');
     
 
     socket.binaryType = "arraybuffer";
@@ -203,12 +203,14 @@
 
         let status = $("#tr_net_status")[0];
         status.textContent = "connected";
+
+        OnConnectionOpened();
     });
 
     // Listen for messages
     var kpt_count = 0;
     socket.addEventListener('message', function (event) {
-        printData(event.data);
+        proccess_message(event.data);
 
         kpt_count++;
 
@@ -232,6 +234,37 @@
     let dataRow = { "pkgs" : [
         ]};
 
+    function proccess_message(msg)
+    {
+        let dv = new DataView(msg);
+        let type = dv.getUint8(12);
+        let dev_id = dv.getUint8(13);
+
+        if (type == 8)
+            printData(msg);
+
+        if (type == 1)
+            createDeviceView(dev_id);
+    }
+
+    function createDeviceView(dev_id)
+    {
+        devices_view = document.getElementById("devices_view_container");
+        data_view_name = `devID:${dev_id}`;
+        data_view = document.getElementById(data_view_name);
+
+        if (!data_view) {
+            vtemplate = document.querySelector('#twai_data_view_template');
+            dv = vtemplate.content.querySelector("div");
+            view = document.importNode(dv, true);
+            view.id = data_view_name;
+            devices_view.appendChild(view);
+            data_view = view.querySelector(".list_view");
+            dvname = view.querySelector(".device_id_field");
+            dvname.innerHTML = data_view_name;
+        }
+    }
+    
     function printData(data) {
         let dv = new DataView(data);
 
@@ -253,6 +286,8 @@
         var d5 = dv.getUint8(30).toString(16).toUpperCase().padStart(2, '0');;
         var d6 = dv.getUint8(31).toString(16).toUpperCase().padStart(2, '0');;
         var d7 = dv.getUint8(19).toString(16).toUpperCase().padStart(2, '0');;
+
+        // console.log(id, identifier, data_length_code, d0, d1, d2, d3, d4, d5, d6, d7);
 
         let row = {
             "row_id": dev_id + "_" + identifier,
@@ -278,20 +313,7 @@
         if (!ShowStream) 
             return; 
 
-        devices_view = document.getElementById("devices_view_container");
-        data_view_name = `twai_data_view${dev_id}`;
-        data_view = document.getElementById(data_view_name);
-
-        if (!data_view) {
-            vtemplate = document.querySelector('#twai_data_view_template');
-            dv = vtemplate.content.querySelector("div");
-            view = document.importNode(dv, true);
-            view.id = data_view_name;
-            devices_view.appendChild(view);
-            data_view = view.querySelector(".list_view");
-            dvname = view.querySelector(".device_id_field");
-            dvname.innerHTML = data_view_name;
-        }
+        createDeviceView(dev_id);
 
         targetID = ''.concat(dev_id, '_', identifier);
 
@@ -437,12 +459,27 @@
                     dv.setUint8(19, parseInt(data[pos], 16));
             }
     
-            console.log(data, dv);
+            // console.log(data, dv);
             socket.send(buff);
         });
 
     }
 
+    function OnConnectionOpened()
+    {
+        buff = new ArrayBuffer(32);
+        dv = new DataView(buff);
+
+        dv.setUint32(0, 0, true);                       // tl
+        dv.setUint32(4, 0, true);                       // th
+        dv.setUint32(8, sended_msd_id++, true);         // id
+        dv.setUint8(12, 2);                             // type
+        dv.setUint8(13, 254);                           // dev_id
+
+        console.log(dv);
+        socket.send(buff);
+    }
+    
     $("#msg_to_send").keypress(function(e){
         if (e.keyCode == 13 && e.shiftKey)
             return;
