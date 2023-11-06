@@ -5,12 +5,16 @@
 #include "driver/twai.h"
 
 #define TWAI_TIMING_CONFIG_83_3KBITS()   {.brp = 48, .tseg_1 = 15, .tseg_2 = 4, .sjw = 3, .triple_sampling = false}
+#define TWAI_TIMING_CONFIG_80KBITS()   {.brp = 50, .tseg_1 = 15, .tseg_2 = 4, .sjw = 3, .triple_sampling = false}
 
 class can  
 {
-	static gpio_num_t _tx_gpio_num;
-	static gpio_num_t _rx_gpio_num;
-
+	static struct transceiver_config_t
+	{
+		gpio_num_t tx, rx, err, stb, en;
+		bool ft;
+	} transceiver_config;
+	
 	static twai_timing_config_t *t_config;
 	static twai_filter_config_t f_config;
 	static twai_general_config_t g_config;
@@ -19,6 +23,7 @@ public:
 	enum speed_t {
 		_25KBITS,
 		_50KBITS,
+		_80KBITS,
 		_83_3KBITS,
 		_100KBITS,
 		_125KBITS,
@@ -28,8 +33,15 @@ public:
 		_1MBITS
 	};
 
-	can(gpio_num_t tx_gpio_num, gpio_num_t rx_gpio_num);
+	can(gpio_num_t tx, gpio_num_t rx);
+	can(gpio_num_t tx, gpio_num_t rx, gpio_num_t err, gpio_num_t stb, gpio_num_t en);
 	~can();
+
+	static void init(gpio_num_t tx, gpio_num_t rx, bool ft = false, 
+					gpio_num_t err = GPIO_NUM_NC, gpio_num_t stb = GPIO_NUM_NC, gpio_num_t en = GPIO_NUM_NC);
+	
+	static void ft_init();
+	static void ft_start();
 
 	static void start(speed_t speed = speed_t::_500KBITS);
 	static void stop();

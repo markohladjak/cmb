@@ -3,7 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
+#include "map"
 
 #define ALERTS_TAG "Alerts"
 
@@ -11,21 +11,138 @@ twai_timing_config_t *can::t_config = nullptr;
 twai_filter_config_t can::f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 twai_general_config_t can::g_config = TWAI_GENERAL_CONFIG_DEFAULT(GPIO_NUM_NC, GPIO_NUM_NC, TWAI_MODE_NORMAL);
 
-gpio_num_t can::_tx_gpio_num = GPIO_NUM_NC;
-gpio_num_t can::_rx_gpio_num = GPIO_NUM_NC;
+can::transceiver_config_t can::transceiver_config = { GPIO_NUM_NC, GPIO_NUM_NC, GPIO_NUM_NC, GPIO_NUM_NC, GPIO_NUM_NC, false };
 
-can::can(gpio_num_t tx_gpio_num, gpio_num_t rx_gpio_num)
+can::can(gpio_num_t tx, gpio_num_t rx)
 {
-    _tx_gpio_num = tx_gpio_num;
-    _rx_gpio_num = rx_gpio_num;
+    init(tx, rx);
+}
 
-    g_config.tx_io = tx_gpio_num;
-    g_config.rx_io = rx_gpio_num;
+can::can(gpio_num_t tx, gpio_num_t rx, gpio_num_t err, gpio_num_t stb, gpio_num_t en)
+{
+    init(tx, rx, true, err, stb, en);
+}
+
+void can::init(gpio_num_t tx, gpio_num_t rx, bool ft, gpio_num_t err, gpio_num_t stb, gpio_num_t en)
+{
+    can::transceiver_config.tx = tx;
+    can::transceiver_config.rx = rx;
+
+    g_config.tx_io = tx;
+    g_config.rx_io = rx;
+
+    if (ft) {
+        can::transceiver_config.ft = true;
+        can::transceiver_config.err = err;
+        can::transceiver_config.stb = stb;
+        can::transceiver_config.en = en;
+    }
 
     g_config.tx_queue_len = 46;
     g_config.rx_queue_len = 46;
+
+    ft_init();
 }
-	
+
+void can::ft_init()
+{
+    if (!transceiver_config.ft)
+        return;
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << transceiver_config.err),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf);
+
+    io_conf.pin_bit_mask = ((1ULL << transceiver_config.stb) | (1ULL << transceiver_config.en));
+    io_conf.mode = GPIO_MODE_OUTPUT;
+
+    gpio_config(&io_conf);
+
+//         {
+//         gpio_config_t io_conf = {
+//             .pin_bit_mask = (1ULL << GPIO_ERR),
+//             .mode = GPIO_MODE_INPUT,
+//             .pull_up_en = GPIO_PULLUP_DISABLE,
+//             .pull_down_en = GPIO_PULLDOWN_DISABLE,
+//             .intr_type = GPIO_INTR_DISABLE
+//         };
+//         gpio_config(&io_conf);
+//         }
+//         {
+//         gpio_config_t io_conf = {
+//             .pin_bit_mask = (1ULL << GPIO_STB),
+//             .mode = GPIO_MODE_OUTPUT,
+//             .pull_up_en = GPIO_PULLUP_DISABLE,
+//             .pull_down_en = GPIO_PULLDOWN_DISABLE,
+//             .intr_type = GPIO_INTR_DISABLE
+//         };
+//         gpio_config(&io_conf);
+//         }
+//         {
+//         gpio_config_t io_conf = {
+//             .pin_bit_mask = (1ULL << GPIO_EN),
+//             .mode = GPIO_MODE_OUTPUT,
+//             .pull_up_en = GPIO_PULLUP_ENABLE,
+//             .pull_down_en = GPIO_PULLDOWN_DISABLE,
+//             .intr_type = GPIO_INTR_DISABLE
+//         };
+//         gpio_config(&io_conf);
+//         }
+
+//         printf("RX: %d\n", gpio_get_level(GPIO_RX));
+//         printf("ERR: %d\n", gpio_get_level(GPIO_ERR));
+
+//         vTaskDelay(1 / portTICK_PERIOD_MS);
+
+//         // Power-on Standby
+//         gpio_set_level(GPIO_STB, 1);
+//         gpio_set_level(GPIO_EN, 0);
+
+//         vTaskDelay(1 / portTICK_PERIOD_MS);
+//         printf("RX: %d\n", gpio_get_level(GPIO_RX));
+//         printf("ERR: %d\n", gpio_get_level(GPIO_ERR));
+
+//         // Normal Mode
+//         gpio_set_level(GPIO_STB, 1);
+//         gpio_set_level(GPIO_EN, 1);
+
+//         vTaskDelay(4 / portTICK_PERIOD_MS);
+//         printf("RX: %d\n", gpio_get_level(GPIO_RX));
+//         printf("ERR: %d\n", gpio_get_level(GPIO_ERR));
+
+//         // Go-to-Sleep
+//         gpio_set_level(GPIO_STB, 0);
+//         gpio_set_level(GPIO_EN, 1);
+
+//         vTaskDelay(10 / portTICK_PERIOD_MS);
+//         printf("RX: %d\n", gpio_get_level(GPIO_RX));
+//         printf("ERR: %d\n", gpio_get_level(GPIO_ERR));
+
+//         // Standby / Sleep
+//         gpio_set_level(GPIO_STB, 0);
+//         gpio_set_level(GPIO_EN, 0);
+
+//         vTaskDelay(1000 / portTICK_PERIOD_MS);
+//         printf("RX: %d\n", gpio_get_level(GPIO_RX));
+//         printf("ERR: %d\n", gpio_get_level(GPIO_ERR));
+
+//         // Normal Mode
+//         gpio_set_level(GPIO_STB, 1);
+//         gpio_set_level(GPIO_EN, 1);
+
+//         vTaskDelay(4 / portTICK_PERIOD_MS);
+//         printf("RX: %d\n", gpio_get_level(GPIO_RX));
+//         printf("ERR: %d\n", gpio_get_level(GPIO_ERR));
+
+
+//     }
+}
+
 can::~can()
 {
     if (t_config) 
@@ -33,17 +150,30 @@ can::~can()
 
     t_config = nullptr;
 }
-		
+
+void can::ft_start()
+{
+    if (!transceiver_config.ft)
+        return;
+    
+    // Normal Mode
+    gpio_set_level(transceiver_config.stb, 1);
+    gpio_set_level(transceiver_config.en, 1);
+}
+
 void can::start(speed_t speed)
 {
     if (t_config)
         stop();
+
+    ft_start();
 
     switch (speed)
     {
     case speed_t::_25KBITS : t_config = new twai_timing_config_t TWAI_TIMING_CONFIG_25KBITS(); break;
     case speed_t::_50KBITS : t_config = new twai_timing_config_t TWAI_TIMING_CONFIG_50KBITS(); break;
     case speed_t::_83_3KBITS : t_config = new twai_timing_config_t TWAI_TIMING_CONFIG_83_3KBITS(); break;
+    case speed_t::_80KBITS : t_config = new twai_timing_config_t TWAI_TIMING_CONFIG_80KBITS(); break;
     case speed_t::_100KBITS : t_config = new twai_timing_config_t TWAI_TIMING_CONFIG_100KBITS(); break;
     case speed_t::_125KBITS : t_config = new twai_timing_config_t TWAI_TIMING_CONFIG_125KBITS(); break;
     case speed_t::_250KBITS : t_config = new twai_timing_config_t TWAI_TIMING_CONFIG_250KBITS(); break;
@@ -54,10 +184,6 @@ void can::start(speed_t speed)
     default:
         break;
     }
-
-// #define TWAI_TIMING_CONFIG_83_3KBITS()   {.brp = 181, .tseg_1 = 15, .tseg_2 = 4, .sjw = 3, .triple_sampling = false}
-
-    // t_config = TWAI_TIMING_CONFIG_83_3KBITS();
 
     ESP_ERROR_CHECK(twai_driver_install(&g_config, t_config, &f_config));
     ESP_LOGI("", "Driver installed");
@@ -70,16 +196,31 @@ void can::start(speed_t speed)
 void can::stop()
 {
     ESP_ERROR_CHECK(twai_stop());
+    ESP_LOGI("", "TWAI stoped");
 
-    ESP_ERROR_CHECK(twai_driver_uninstall());
-    ESP_LOGI("", "Driver uninstalled");
+    // ESP_ERROR_CHECK(twai_driver_uninstall());
+    // ESP_LOGI("", "Driver uninstalled");
 }
 
 void can::transmit(twai_message_t &msg)
 {
     auto err = twai_transmit(&msg, 0);
-    if (err)
+    if (err) {
         printf("twai_transmit: %s\n", esp_err_to_name(err));
+
+        // printf("twai_transmit: %s\n", esp_err_to_name(err));
+
+        if (err == ESP_ERR_INVALID_STATE)
+        {
+            twai_status_info_t s;
+            twai_get_status_info(&s);
+
+            ESP_LOGW("STATE", "s:%d, qtx:%lu, qrx:%lu, tx_ec:%lu, rx_ec:%lu, tx_fc:%lu, rx_mi:%lu, rx_orc:%lu, al:%lu, be:%lu", 
+                s.state, s.msgs_to_tx, s.msgs_to_rx, s.tx_error_counter, s.rx_error_counter,
+                    s.tx_failed_count, s.rx_missed_count, s.rx_overrun_count, s.arb_lost_count, s.bus_error_count);
+        }
+
+    }
 }
 
 esp_err_t can::receive(twai_message_t &msg)
@@ -115,27 +256,53 @@ void can::alerts_task(void *arg)
     // ESP_LOGI(EXAMPLE_TAG, "Trigger errors");
     // trigger_tx_error = true;
 
+    std::map<int, int> alerts_map;
+    std::map<int, char*> alerts_name;
+
+    alerts_name[TWAI_ALERT_TX_IDLE             ] = "IDL";                 // "TX_IDLE";
+    alerts_name[TWAI_ALERT_TX_SUCCESS          ] = "SCC";                 // "TX_SUCCESS";
+    alerts_name[TWAI_ALERT_RX_DATA             ] = "RXD";                 // "RX_DATA";
+    alerts_name[TWAI_ALERT_BELOW_ERR_WARN      ] = "BEW";                 // "BELOW_ERR_WARN";
+    alerts_name[TWAI_ALERT_ERR_ACTIVE          ] = "RRA";                 // "ERR_ACTIVE";
+    alerts_name[TWAI_ALERT_RECOVERY_IN_PROGRESS] = "RIP";                 // "RECOVERY_IN_PROGRESS";
+    alerts_name[TWAI_ALERT_BUS_RECOVERED       ] = "BRD";                 // "BUS_RECOVERED";
+    alerts_name[TWAI_ALERT_ARB_LOST            ] = "AL" ;                 // "ARB_LOST";
+    alerts_name[TWAI_ALERT_ABOVE_ERR_WARN      ] = "AEW";                 // "ABOVE_ERR_WARN";
+    alerts_name[TWAI_ALERT_BUS_ERROR           ] = "BE" ;                 // "BUS_ERROR";
+    alerts_name[TWAI_ALERT_TX_FAILED           ] = "TF" ;                 // "TX_FAILED";
+    alerts_name[TWAI_ALERT_RX_QUEUE_FULL       ] = "RQF";                 // "RX_QUEUE_FULL";
+    alerts_name[TWAI_ALERT_ERR_PASS            ] = "RRP";                 // "ERR_PASS";
+    alerts_name[TWAI_ALERT_BUS_OFF             ] = "BFF";                 // "BUS_OFF";
+    alerts_name[TWAI_ALERT_RX_FIFO_OVERRUN     ] = "RFO";                 // "RX_FIFO_OVERRUN";
+    alerts_name[TWAI_ALERT_TX_RETRIED          ] = "TR" ;                 // "TX_RETRIED";
+    alerts_name[TWAI_ALERT_PERIPH_RESET        ] = "RST";                 // "PERIPH_RESET";
+
+    char buf[256];
+
     while (1) {
         uint32_t alerts;
         twai_read_alerts(&alerts, portMAX_DELAY);
 
-        if (alerts & TWAI_ALERT_TX_IDLE             ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_TX_IDLE             ");
-        if (alerts & TWAI_ALERT_TX_SUCCESS          ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_TX_SUCCESS          ");
-        if (alerts & TWAI_ALERT_RX_DATA             ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_RX_DATA             ");
-        if (alerts & TWAI_ALERT_BELOW_ERR_WARN      ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_BELOW_ERR_WARN      ");
-        if (alerts & TWAI_ALERT_ERR_ACTIVE          ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_ERR_ACTIVE          ");
-        if (alerts & TWAI_ALERT_RECOVERY_IN_PROGRESS) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_RECOVERY_IN_PROGRESS");
-        if (alerts & TWAI_ALERT_BUS_RECOVERED       ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_BUS_RECOVERED       ");
-        if (alerts & TWAI_ALERT_ARB_LOST            ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_ARB_LOST            ");
-        if (alerts & TWAI_ALERT_ABOVE_ERR_WARN      ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_ABOVE_ERR_WARN      ");
-        if (alerts & TWAI_ALERT_BUS_ERROR           ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_BUS_ERROR           ");
-        if (alerts & TWAI_ALERT_TX_FAILED           ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_TX_FAILED           ");
-        if (alerts & TWAI_ALERT_RX_QUEUE_FULL       ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_RX_QUEUE_FULL       ");
-        if (alerts & TWAI_ALERT_ERR_PASS            ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_ERR_PASS            ");
-        if (alerts & TWAI_ALERT_BUS_OFF             ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_BUS_OFF             ");
-        if (alerts & TWAI_ALERT_RX_FIFO_OVERRUN     ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_RX_FIFO_OVERRUN     ");
-        if (alerts & TWAI_ALERT_TX_RETRIED          ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_TX_RETRIED          ");
-        if (alerts & TWAI_ALERT_PERIPH_RESET        ) ESP_LOGE(ALERTS_TAG, "TWAI_ALERT_PERIPH_RESET        ");
+        for (int i=0; i<alerts_name.size(); i++)
+            if ((1 << i) & alerts)
+                alerts_map[1 << i]++;
+
+        auto t0 = esp_timer_get_time();
+        static int64_t tl = 0;
+
+        if (t0 - tl > 1000000) {
+            if (alerts_map.size()) 
+            {
+                int bp = 0;
+                for (auto &a : alerts_map)
+                    bp = sprintf(buf + bp, "[%s: %d] ", alerts_name[a.first], a.second);
+
+                ESP_LOGE("alerts", "%s", buf);
+
+                alerts_map.clear();
+            }
+            tl = t0;
+        }        
 
         // if (alerts & TWAI_ALERT_ABOVE_ERR_WARN) {
         //     ESP_LOGE(ALERTS_TAG, "Surpassed Error Warning Limit");
