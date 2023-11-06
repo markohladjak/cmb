@@ -6,9 +6,12 @@
 #include <driver/twai.h>
 
 enum dtp_message_t {
-     DTPT_CAN_DATA = 8,
+    DTPT_INFO = 1,
+    DTPT_REQUEST = 2,
+    DTPT_CAN_DATA = 8,
 };
 
+class msg_can_data;
 
 class dtp_message {
     int64_t _time_stamp;
@@ -26,6 +29,8 @@ public:
         set_id(id);
     }
 
+
+
     void set_id(int32_t id) {
         _id = id;
         set_time_stamp();
@@ -38,6 +43,21 @@ public:
     void set_type(uint8_t type) { _type = type; }
     uint8_t get_type() { return _type; }
     int32_t get_id() { return _id; }
+};
+
+class msg_info: public dtp_message
+{
+public:
+    msg_info() {
+        _type = DTPT_INFO;
+    }
+};
+
+class msg_request : public dtp_message
+{
+    msg_request() {
+        _type = DTPT_REQUEST;
+    }
 };
 
 class msg_can_data: public dtp_message 

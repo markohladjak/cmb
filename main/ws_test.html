@@ -130,6 +130,7 @@
             </textarea>
             <!-- <input id="msg_to_send" type="text" value="123AA678 8 10 1A 2B 7C AD EF FF 44"> -->
             <button onclick="onClickSend()">Send</button>
+            <button onclick="onClickSendAll()">Send All</button>
         </div>
 
         <div id="devices_view_container">
@@ -401,6 +402,45 @@
  
         console.log(data, dv);
         socket.send(buff);
+    }
+
+    function onClickSendAll()
+    {
+        const text = $("#msg_to_send").val();
+        const curet = $("#msg_to_send")[0].selectionStart;
+        const row = text.substr(0, curet).split("\n").length;
+        const rows = text.split("\n");
+
+        rows.forEach(msg => {
+            // const re = /\s/
+            data = msg.split(' ');
+
+            buff = new ArrayBuffer(32);
+            dv = new DataView(buff);
+
+            dv.setUint32(0, 0, true);                       // tl
+            dv.setUint32(4, 0, true);                       // th
+            dv.setUint32(8, sended_msd_id++, true);         // id
+            dv.setUint8(12, 8);                             // type
+            dv.setUint8(13, 254);                           // dev_id
+
+            dv.setUint32(16, 0, true);                      // flags
+            dv.setUint32(20, parseInt(data[0], 16), true);   // identifier
+            dv.setUint8(24, parseInt(data[1]));            // data_length_code
+
+
+            for (let i = 0; i < data[1]; i++) {
+                pos = 2 + i;
+                if (i < 7)
+                    dv.setUint8(25 + i, parseInt(data[pos], 16));
+                else
+                    dv.setUint8(19, parseInt(data[pos], 16));
+            }
+    
+            console.log(data, dv);
+            socket.send(buff);
+        });
+
     }
 
     $("#msg_to_send").keypress(function(e){

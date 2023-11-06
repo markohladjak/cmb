@@ -4,6 +4,8 @@
 	
 #include "driver/twai.h"
 
+#define TWAI_TIMING_CONFIG_83_3KBITS()   {.brp = 48, .tseg_1 = 15, .tseg_2 = 4, .sjw = 3, .triple_sampling = false}
+
 class can  
 {
 	static gpio_num_t _tx_gpio_num;
@@ -17,6 +19,7 @@ public:
 	enum speed_t {
 		_25KBITS,
 		_50KBITS,
+		_83_3KBITS,
 		_100KBITS,
 		_125KBITS,
 		_250KBITS,
@@ -34,5 +37,7 @@ public:
 	static esp_err_t receive(twai_message_t &msg);
 
 	static int get_msgs_to_rx();
+
+	static void alerts_task(void *arg);
 };
 #endif
