@@ -366,7 +366,7 @@ void start_web_rx_task()
 
 void stop_web_rx_task()
 {
-    _web_rx_task_run = true;
+    _web_rx_task_run = false;
 }
 
 void start_net_rx_task()

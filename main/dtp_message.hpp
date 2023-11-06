@@ -41,7 +41,7 @@ public:
     uint8_t get_dev_id() { return _dev_id; }
     void set_time_stamp() { _time_stamp = 0; }
     void set_type(uint8_t type) { _type = type; }
-    uint8_t get_type() { return _type; }
+    uint8_t get_type() const { return _type; }
     int32_t get_id() { return _id; }
 };
 

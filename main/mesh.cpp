@@ -190,7 +190,7 @@ bool mesh::receive(uint8_t *data, uint16_t *len)
     *len = msg.size;
 
     if (err != ESP_OK) {
-        ESP_LOGE(MESH_TAG, "esp_mesh_send error: %s", esp_err_to_name(err));
+        ESP_LOGE(MESH_TAG, "esp_mesh_recv error: %s", esp_err_to_name(err));
         return false;
         // vTaskDelay(1);
     }
