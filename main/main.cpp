@@ -22,6 +22,8 @@
 #include "twai_filter.hpp"
 #include "dtp_message.hpp"
 
+#include "work/work.h"
+
 #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 #include "esp_log.h"
 
@@ -29,7 +31,7 @@ extern "C" void app_main(void);
 
 using namespace rutils;
 
-#define DEVICE_ID 28
+#define DEVICE_ID 54
 
 #define CF_UART_ENABLED 1
 #define CF_MESH_ENABLED 1
@@ -37,12 +39,25 @@ using namespace rutils;
 #define MSG_SIZE 32
 #define TX_WEB_QUEUE_SIZE 64
 #define TX_MESH_QUEUE_SIZE 32
-#define SEND_WORK_TIME 5
+#define SEND_WORK_TIME 100
 
 #define TASK_CONTROL_DELAY 10
 
 #define UART_TXD_PIN (GPIO_NUM_4)
 #define UART_RXD_PIN (GPIO_NUM_5)
+
+
+#define MODE_SELECT_PIN0 GPIO_NUM_4
+#define MODE_SELECT_PIN1 GPIO_NUM_12
+
+enum class app_mode_t { 
+    APP_MODE_NONE = -1,
+    APP_MODE_DIAGNOSTIC,
+    APP_MODE_DIAGNOSTIC_MESH,
+    APP_MODE_APPLICATION
+};
+
+app_mode_t app_mode = app_mode_t::APP_MODE_NONE;
 
 // static twai_message_t ping_message = {.flags = 0, .identifier = 0x180, .data_length_code = 8,
 //                                             .data = {0xAA, 0x02 , 0 , 0x40 ,0x10 ,0 ,0 ,0}};
@@ -79,7 +94,7 @@ esp_timer_handle_t periodic_timer;
 
 uart *_uart;
 
-static const char *TAG = "cmb";
+static const char *LTAG = "cmb";
 
 
 void run_mdns();
@@ -132,7 +147,7 @@ void web_send_work(void *) {
 void web_tx(dtp_message& msg)
 {
     if (xQueueSend(_tx_web_queue, &msg, 0/*portMAX_DELAY*/) != pdPASS)
-        // ESP_LOGE(TAG, "_tx_web_queue full");
+        // ESP_LOGE(LTAG, "_tx_web_queue full");
     ;
 
     if (_web_send_work_done) {
@@ -141,7 +156,7 @@ void web_tx(dtp_message& msg)
         if (http::queue_work(web_send_work) != ESP_OK) {
             _web_send_work_done = true;
 
-            // ESP_LOGE(TAG, "work start failer");
+            // ESP_LOGE(LTAG, "work start failer");
             // vTaskDelay(1);
         }
     }
@@ -151,7 +166,7 @@ void net_tx(dtp_message& msg)
 {
     mesh::send((uint8_t*)&msg, MSG_SIZE);
     // if (xQueueSend(_tx_mesh_queue, &msg, portMAX_DELAY) != pdPASS)
-        // ESP_LOGE(TAG, "_tx_web_queue full");
+        // ESP_LOGE(LTAG, "_tx_web_queue full");
     ;
 
     // _uart->send((uint8_t*)&msg, MSG_SIZE);
@@ -465,14 +480,14 @@ void on_net_disconnected()
 void run_mdns() {
     esp_err_t err = mdns_init();
     if (err) {
-		ESP_LOGE(TAG, "Error setting up MDNS responder!");
+		ESP_LOGE(LTAG, "Error setting up MDNS responder!");
         return;
     }
 
     mdns_hostname_set("cmb");
     mdns_instance_name_set("CMB");
 
-	ESP_LOGE(TAG, "MDNS Started.");
+	ESP_LOGE(LTAG, "MDNS Started.");
 }
 
 void stop_mdns()
@@ -489,7 +504,7 @@ void print_state_report()
     static int64_t tl = t0;
 
     if (t0 - tl > 1000000){
-        ESP_LOGW(TAG, "heep size: %lu    is ISR: %d       rate: %d", esp_get_free_heap_size(), xPortInIsrContext(), c);
+        ESP_LOGW(LTAG, "heep size: %lu    is ISR: %d       rate: %d", esp_get_free_heap_size(), xPortInIsrContext(), c);
         c = 0;
         tl = t0;
     }
@@ -498,7 +513,7 @@ void print_state_report()
     // static int64_t tl = t0;
 
     // if (t0 - tl > 1000000){
-    //     ESP_LOGW(TAG, "heep size: %d    messages: %d"
+    //     ESP_LOGW(LTAG, "heep size: %d    messages: %d"
     //         , esp_get_free_heap_size()
     //         , uxQueueMessagesWaiting(_tx_web_queue));
         
@@ -560,10 +575,41 @@ void on_init()
     // ESP_LOGI("", "Task priorities: %d", esp_meh);
 }
 
+app_mode_t get_app_mode()
+{
+    uint8_t mode = 0;
+
+    if (!gpio_get_level(MODE_SELECT_PIN0)) mode |= 1 << 0;
+    if (!gpio_get_level(MODE_SELECT_PIN1)) mode |= 1 << 1;
+
+    switch (mode)
+    {
+    case 0: return app_mode_t::APP_MODE_APPLICATION;
+    case 1: return app_mode_t::APP_MODE_DIAGNOSTIC;
+    case 2: return app_mode_t::APP_MODE_DIAGNOSTIC_MESH;    
+    default:
+        return app_mode_t::APP_MODE_DIAGNOSTIC;
+    }
+}
+
 void init()
 {
+    gpio_config_t io_conf = {
+        .pin_bit_mask = ((1ULL << MODE_SELECT_PIN0) | (1ULL << MODE_SELECT_PIN1)),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&io_conf);
+
+    app_mode = get_app_mode();
+    
+    ESP_LOGI(LTAG, "application mode %d\n", (int)app_mode);
+
     while (!DEVICE_ID) {
-        ESP_LOGE(TAG, "DEVICE_ID not set...");
+        ESP_LOGE(LTAG, "DEVICE_ID not set...");
         TaskDelay(1000);
     }
 
@@ -626,15 +672,35 @@ void blink_config(int count)
 	}, "MT1", 1000, NULL, 1, &task, tskNO_AFFINITY);
 }
 
+void run_application()
+{
+    work::run();
+}
+
 void app_main(void)
 {
-    can can(GPIO_NUM_21, GPIO_NUM_22);
-    // can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
-
     init();
 
+    // can can(GPIO_NUM_21, GPIO_NUM_22);
+    can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
+
     mesh::start();
-    can::start(can::speed_t::_100KBITS);
+    can::start(can::speed_t::_100KBITS, TWAI_MODE_NORMAL);
+
+    // _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
+    // _uart->start();
+
+    start_net_rx_task();
+    // start_uart_rx_task();
+
+
+    start_twai_rx_task();
+
+    if (app_mode == app_mode_t::APP_MODE_APPLICATION)
+    {
+        run_application();
+    }
+
 
 
     // twai_message_t tm;
@@ -648,12 +714,4 @@ void app_main(void)
     //     can::transmit(tm);        
     // }
 
-    // _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
-    // _uart->start();
-
-    start_net_rx_task();
-    // start_uart_rx_task();
-
-
-    start_twai_rx_task();
 }

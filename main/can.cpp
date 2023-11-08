@@ -161,7 +161,7 @@ void can::ft_start()
     gpio_set_level(transceiver_config.en, 1);
 }
 
-void can::start(speed_t speed)
+void can::start(speed_t speed, twai_mode_t mode)
 {
     if (t_config)
         stop();
@@ -184,6 +184,8 @@ void can::start(speed_t speed)
     default:
         break;
     }
+
+    g_config.mode = mode;
 
     ESP_ERROR_CHECK(twai_driver_install(&g_config, t_config, &f_config));
     ESP_LOGI("", "Driver installed");

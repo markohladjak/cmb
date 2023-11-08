@@ -43,7 +43,7 @@ public:
 	static void ft_init();
 	static void ft_start();
 
-	static void start(speed_t speed = speed_t::_500KBITS);
+	static void start(speed_t speed = speed_t::_500KBITS, twai_mode_t mode = TWAI_MODE_NORMAL);
 	static void stop();
 	static void transmit(twai_message_t &msg);
 	static esp_err_t receive(twai_message_t &msg);
