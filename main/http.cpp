@@ -24,13 +24,13 @@ std::map<int, bool> http::_wscs;
 bool http::_is_ready = false;
 std::atomic<int32_t> works_count(0);
 
-httpd_ws_frame_t http::_ws_pkt = {
-    .final = 0,
-    .fragmented = 0,
-    .type = HTTPD_WS_TYPE_BINARY,
-    .payload = _rx_buf,
-    .len = 18
-};
+// httpd_ws_frame_t http::_ws_pkt = {
+//     .final = 0,
+//     .fragmented = 0,
+//     .type = HTTPD_WS_TYPE_BINARY,
+//     .payload = _rx_buf,
+//     .len = 18
+// };
 
 const httpd_uri_t http::_ws_uri = {
     .uri        = "/ws",
