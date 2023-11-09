@@ -35,9 +35,25 @@ std::atomic<int32_t> works_count(0);
 const httpd_uri_t http::_ws_uri = {
     .uri        = "/ws",
     .method     = HTTP_GET,
-    .handler    = http::request_handler,
+    .handler    = http::request_handler_ws,
     .user_ctx   = NULL,
     .is_websocket = true
+};
+
+const httpd_uri_t http::_http_uri = {
+    .uri        = "/",
+    .method     = HTTP_GET,
+    .handler    = http::request_handler_http,
+    .user_ctx   = NULL,
+    .is_websocket = false
+};
+
+const httpd_uri_t http::_ico_uri = {
+    .uri        = "/favicon.ico",
+    .method     = HTTP_GET,
+    .handler    = http::request_handler_ico,
+    .user_ctx   = NULL,
+    .is_websocket = false
 };
 
 static const char *TAG = "cmb";
@@ -67,6 +83,8 @@ void http::start_webserver()
     config.open_fn = httpd_open_func;
     config.close_fn = httpd_close_func;
 
+    config.stack_size = 0x2000;
+
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     
     if (httpd_start(&_server, &config) != ESP_OK) {
@@ -77,6 +95,8 @@ void http::start_webserver()
 
     ESP_LOGI(TAG, "Registering URI handlers");
     httpd_register_uri_handler(_server, &_ws_uri);
+    httpd_register_uri_handler(_server, &_http_uri);
+    httpd_register_uri_handler(_server, &_ico_uri);
 }
 
 void http::stop_webserver()
@@ -103,8 +123,10 @@ void http::disconnect_handler(void* arg, esp_event_base_t event_base, int32_t ev
     stop_webserver();
 }
 
-esp_err_t http::request_handler(httpd_req_t *req)
+esp_err_t http::request_handler_ws(httpd_req_t *req)
 {
+    ESP_LOGE("ws URI", "   %s", req->uri);
+
     if (req->method == HTTP_GET) {
         ESP_LOGI(TAG, "Handshake done, the new connection was opened");
         return ESP_OK;
@@ -130,6 +152,60 @@ esp_err_t http::request_handler(httpd_req_t *req)
     xQueueSend(_rx_task_queue, _rx_buf, 0/*portMAX_DELAY*/);
 
     return ret;
+}
+
+esp_err_t http::request_handler_http(httpd_req_t *req)
+{
+    ESP_LOGE("http URI", "   %s", req->uri);
+
+    httpd_resp_set_type(req, "text/html");
+    // httpd_resp_set_status(req, );
+
+    FILE* f = fopen("/httpsrc/ws_test.html", "r");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for reading");
+        return ESP_FAIL;
+    }
+    char buf[0x1000];
+    int len = 0;
+    
+    do
+    {
+        len = fread(buf, 1, sizeof(buf), f);
+        httpd_resp_send_chunk(req, buf, len);
+
+        // httpd_resp_send(req, "<h1>Hello Secure World!</h1>", HTTPD_RESP_USE_STRLEN);
+    }
+    while (len > 0);
+
+    return ESP_OK;
+}
+
+esp_err_t http::request_handler_ico(httpd_req_t *req)
+{
+    ESP_LOGE("ico URI", "   %s", req->uri);
+
+    httpd_resp_set_type(req, "image/ico");
+    // httpd_resp_set_status(req, );
+
+    FILE* f = fopen("/httpsrc/favicon.ico", "r");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for reading");
+        return ESP_FAIL;
+    }
+    char buf[0x1000];
+    int len = 0;
+    
+    do
+    {
+        len = fread(buf, 1, sizeof(buf), f);
+        httpd_resp_send_chunk(req, buf, len);
+
+        // httpd_resp_send(req, "<h1>Hello Secure World!</h1>", HTTPD_RESP_USE_STRLEN);
+    }
+    while (len > 0);
+
+    return ESP_OK;
 }
 
 void http::update_ready_state()
@@ -172,65 +248,65 @@ bool http::is_ready()
     return _is_ready;
 }
 
-bool http::send(uint8_t *data, size_t len)
-{
-    xSemaphoreTake(_send_mutex, portMAX_DELAY);
+// bool http::send(uint8_t *data, size_t len)
+// {
+//     xSemaphoreTake(_send_mutex, portMAX_DELAY);
 
-    if (!is_ready() ||
-        !_server ||
-        !_wscs.size() ||
-        httpd_ws_get_fd_info(_server, _wscs.begin()->first) != HTTPD_WS_CLIENT_WEBSOCKET)
-    {
-        xSemaphoreGive(_send_mutex);
-        return false;
-    }
+//     if (!is_ready() ||
+//         !_server ||
+//         !_wscs.size() ||
+//         httpd_ws_get_fd_info(_server, _wscs.begin()->first) != HTTPD_WS_CLIENT_WEBSOCKET)
+//     {
+//         xSemaphoreGive(_send_mutex);
+//         return false;
+//     }
 
-    esp_err_t err = httpd_queue_work(_server, [](void *arg){
-        auto pkt = new httpd_ws_frame_t {
-            .final = 0,
-            .fragmented = 0,
-            .type = HTTPD_WS_TYPE_BINARY,
-            .payload = (uint8_t*)arg,
-            .len = 128
-        };
+//     esp_err_t err = httpd_queue_work(_server, [](void *arg){
+//         auto pkt = new httpd_ws_frame_t {
+//             .final = 0,
+//             .fragmented = 0,
+//             .type = HTTPD_WS_TYPE_BINARY,
+//             .payload = (uint8_t*)arg,
+//             .len = 128
+//         };
 
-        // auto pkt = (httpd_ws_frame_t*)arg;
+//         // auto pkt = (httpd_ws_frame_t*)arg;
 
-        for (int i=0; i<1000; i++) {
-            auto t0 = esp_timer_get_time();
-            static int64_t tl = t0;
+//         for (int i=0; i<1000; i++) {
+//             auto t0 = esp_timer_get_time();
+//             static int64_t tl = t0;
 
-            esp_err_t e = httpd_ws_send_frame_async(_server, _wscs.begin()->first, pkt);
+//             esp_err_t e = httpd_ws_send_frame_async(_server, _wscs.begin()->first, pkt);
 
-            if (t0 - tl > 1000000){
-                auto t1 = esp_timer_get_time();
-                ESP_LOGW("MMM", "httpd_ws_send_frame_async delta: %" PRIu64 "  wk: %ld", t1 - t0, (int32_t)works_count);
-                tl = t0;
-            }
+//             if (t0 - tl > 1000000){
+//                 auto t1 = esp_timer_get_time();
+//                 ESP_LOGW("MMM", "httpd_ws_send_frame_async delta: %" PRIu64 "  wk: %ld", t1 - t0, (int32_t)works_count);
+//                 tl = t0;
+//             }
 
-            if (e) {
-                ESP_LOGE("MMM", "httpd_ws_send_frame_async error: %d", e);
-                break;
-            }
-        }
+//             if (e) {
+//                 ESP_LOGE("MMM", "httpd_ws_send_frame_async error: %d", e);
+//                 break;
+//             }
+//         }
 
-        works_count = works_count - 1;
+//         works_count = works_count - 1;
 
-        // delete[] pkt->payload;
-        delete pkt;
-    }, data);
+//         // delete[] pkt->payload;
+//         delete pkt;
+//     }, data);
 
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "httpd_queue_work error: %d", err);
-        // delete pkt;
-    } else{
-        works_count = works_count + 1;
-    }
+//     if (err != ESP_OK) {
+//         ESP_LOGE(TAG, "httpd_queue_work error: %d", err);
+//         // delete pkt;
+//     } else{
+//         works_count = works_count + 1;
+//     }
 
-    xSemaphoreGive(_send_mutex);
+//     xSemaphoreGive(_send_mutex);
 
-    return err == ESP_OK;
-}
+//     return err == ESP_OK;
+// }
 
 void http::send_async(uint8_t *data, size_t len)
 {
@@ -242,7 +318,21 @@ void http::send_async(uint8_t *data, size_t len)
         .len = len
     };
 
-    esp_err_t err = httpd_ws_send_frame_async(_server, _wscs.begin()->first, pkt);
+    int sockfd = -1;
+    for (auto wscs: _wscs)
+        if (wscs.second)
+        {
+            sockfd = wscs.first;
+            break;
+        }
+
+    if (sockfd < 0)
+    {        
+        ESP_LOGE("cmb", "send_async error %s", "no WebSocket connections active");
+        return;
+    }
+
+    esp_err_t err = httpd_ws_send_frame_async(_server, sockfd, pkt);
 
     if (err != ESP_OK) 
         ESP_LOGE("cmb", "send_async error %s", esp_err_to_name(err));

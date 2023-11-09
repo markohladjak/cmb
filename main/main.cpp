@@ -27,11 +27,13 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 #include "esp_log.h"
 
+#include "esp_spiffs.h"
+
 extern "C" void app_main(void);
 
 using namespace rutils;
 
-#define DEVICE_ID 54
+#define DEVICE_ID 28
 
 #define CF_UART_ENABLED 1
 #define CF_MESH_ENABLED 1
@@ -592,8 +594,37 @@ app_mode_t get_app_mode()
     }
 }
 
+void init_spiffs()
+{
+    ESP_LOGI(LTAG, "Initializing SPIFFS");
+
+    esp_vfs_spiffs_conf_t conf = {
+      .base_path = "/httpsrc",
+      .partition_label = NULL,
+      .max_files = 5,
+      .format_if_mount_failed = true
+    };
+
+    // Use settings defined above to initialize and mount SPIFFS filesystem.
+    // Note: esp_vfs_spiffs_register is an all-in-one convenience function.
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(LTAG, "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(LTAG, "Failed to find SPIFFS partition");
+        } else {
+            ESP_LOGE(LTAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+}
+
 void init()
 {
+    init_spiffs();
+
     gpio_config_t io_conf = {
         .pin_bit_mask = ((1ULL << MODE_SELECT_PIN0) | (1ULL << MODE_SELECT_PIN1)),
         .mode = GPIO_MODE_INPUT,
@@ -681,8 +712,8 @@ void app_main(void)
 {
     init();
 
-    // can can(GPIO_NUM_21, GPIO_NUM_22);
-    can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
+    can can(GPIO_NUM_21, GPIO_NUM_22);
+    // can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
 
     mesh::start();
     can::start(can::speed_t::_100KBITS, TWAI_MODE_NORMAL);

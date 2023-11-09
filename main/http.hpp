@@ -23,6 +23,8 @@ class http
 private:
 	static httpd_ws_frame_t _ws_pkt;
 	static const httpd_uri_t _ws_uri;
+	static const httpd_uri_t _http_uri;
+	static const httpd_uri_t _ico_uri;
 
 	static uint8_t _rx_buf[];
 	static std::map<int, bool> _wscs;
@@ -45,7 +47,10 @@ private:
 	static void disconnect_handler(void* arg, esp_event_base_t event_base,
                                int32_t event_id, void* event_data);
 
-	static esp_err_t request_handler(httpd_req_t *req);
+	static esp_err_t request_handler_ws(httpd_req_t *req);
+	static esp_err_t request_handler_http(httpd_req_t *req);
+	static esp_err_t request_handler_ico(httpd_req_t *req);
+	
 	static void update_ready_state();
 
 	static void ws_async_send(void *arg);
@@ -57,7 +62,7 @@ public:
 	static void start();
 	static void stop();
 	static bool is_ready();
-	static bool send(uint8_t *data, size_t len);
+	// static bool send(uint8_t *data, size_t len);
 	static void send_async(uint8_t *data, size_t len);
 	static bool receive(uint8_t *data, size_t *len, TickType_t wait);
 
