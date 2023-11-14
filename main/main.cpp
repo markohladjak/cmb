@@ -28,6 +28,7 @@
 #include "esp_log.h"
 
 #include "esp_spiffs.h"
+#include "FirmwareUpdate.hpp"
 
 extern "C" void app_main(void);
 
@@ -158,7 +159,7 @@ void web_tx(dtp_message& msg)
         if (http::queue_work(web_send_work) != ESP_OK) {
             _web_send_work_done = true;
 
-            // ESP_LOGE(LTAG, "work start failer");
+            ESP_LOGE(LTAG, "work start failed");
             // vTaskDelay(1);
         }
     }
@@ -648,7 +649,19 @@ void init()
 
     esp_log_level_set("*", ESP_LOG_VERBOSE);
 
-    ESP_ERROR_CHECK(nvs_flash_init());
+    // Initialize NVS.
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // 1.OTA app partition table has a smaller NVS partition size than the non-OTA
+        // partition table. This size mismatch may cause NVS initialization to fail.
+        // 2.NVS partition contains data in new format and cannot be recognized by this version of code.
+        // If this happens, we erase NVS partition and initialize NVS again.
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+
+    ESP_ERROR_CHECK(err);
+
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -711,6 +724,9 @@ void run_application()
 void app_main(void)
 {
     init();
+
+    http *http_server = new http();
+    FirmwareUpdate *update = new FirmwareUpdate(http_server);
 
     can can(GPIO_NUM_21, GPIO_NUM_22);
     // can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);

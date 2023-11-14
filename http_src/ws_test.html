@@ -112,6 +112,15 @@
     </div>
     <button onclick="onClickButton4()">Show All</button>
 
+    <div>
+        <form enctype="multipart/form-data">
+            <input id="upload_file" name="file" type="file" />
+            <input id="upload_button" type="button" value="Upload" />
+            <input id="restart_button" type="button" value="Restart" />
+        </form>
+        <progress></progress>
+    </div>
+
     <div class="data_block">
         <div>
             <textarea id="msg_to_send" rows="7">
@@ -192,7 +201,9 @@
     // const socket = new WebSocket('ws://10.10.10.2:80/ws');  
     // const socket = new WebSocket('ws://192.168.0.111:80/ws');
     // const socket = new WebSocket('ws://192.168.0.103:80/ws');
-    const socket = new WebSocket('ws://cmb.local:80/ws');
+    // const socket = new WebSocket('ws://cmb.local:80/ws');
+    const socket = new WebSocket('ws://' + location.host + ':80/ws');
+    
     // const socket = new WebSocket('ws://192.168.178.130:80/ws');
     
 
@@ -490,6 +501,62 @@
         }
     });
 
+    $('#upload_button').on('click', function () {
+        var freader = new FileReader();
+        freader.onload = (evt) => {
+            $.ajax({
+                // Your server script to process the upload
+                url: '/upload/FFFF',
+                type: 'POST',
+
+                // Form data
+                data: evt.target.result,
+
+                // Tell jQuery not to process data or worry about content-type
+                // You *must* include these options!
+                cache: false,
+                contentType: false,
+                processData: false,
+
+                // Custom XMLHttpRequest
+                xhr: function () {
+                var myXhr = $.ajaxSettings.xhr();
+                if (myXhr.upload) {
+                    // For handling the progress of the upload
+                    myXhr.upload.addEventListener('progress', function (e) {
+                    if (e.lengthComputable) {
+                        $('progress').attr({
+                        value: e.loaded,
+                        max: e.total,
+                        });
+                    }
+                    }, false);
+                }
+                return myXhr;
+                }
+            });
+        }
+        let file_to_upload = $('#upload_file')[0].files[0];
+        freader.readAsArrayBuffer(file_to_upload);
+
+    });
+
+    $('#restart_button').on('click', function () {
+        $.ajax({
+            // Your server script to process the upload
+            url: '/upload/Restart',
+            type: 'GET',
+
+            // Form data
+            // data: evt.target.result,
+
+            // Tell jQuery not to process data or worry about content-type
+            // You *must* include these options!
+            cache: false,
+            contentType: false,
+            processData: false,
+        });
+    });
 </script>
 </body>
 

@@ -15,16 +15,19 @@ extern "C" {
 #include <esp_http_server.h>
 #include <esp_event.h>
 #include <map>
+#include "IFileUpload.hpp"
 
 typedef void* httpd_handle_t;
 
-class http  
+class http: public IFileUpload
 {
 private:
 	static httpd_ws_frame_t _ws_pkt;
 	static const httpd_uri_t _ws_uri;
 	static const httpd_uri_t _http_uri;
 	static const httpd_uri_t _ico_uri;
+	static const httpd_uri_t _file_upload;
+	static const httpd_uri_t _restart;
 
 	static uint8_t _rx_buf[];
 	static std::map<int, bool> _wscs;
@@ -36,6 +39,11 @@ private:
 	static SemaphoreHandle_t _send_task_sem;
 
 	static QueueHandle_t _rx_task_queue;
+
+	static struct _upload_handler {
+		IFileUploadHandler *obj = nullptr;
+		UploadHandler_t handler;
+	} upload_handler;
 
 	static esp_err_t httpd_open_func(httpd_handle_t hd, int sockfd);
 	static void httpd_close_func(httpd_handle_t hd, int sockfd);
@@ -50,14 +58,18 @@ private:
 	static esp_err_t request_handler_ws(httpd_req_t *req);
 	static esp_err_t request_handler_http(httpd_req_t *req);
 	static esp_err_t request_handler_ico(httpd_req_t *req);
+	static esp_err_t request_handler_upload(httpd_req_t *req);
+	static esp_err_t request_handler_restart(httpd_req_t *req);
 	
 	static void update_ready_state();
 
 	static void ws_async_send(void *arg);
 public:
 
-	http();
-	~http();
+	// http();
+	// ~http();
+
+	void RegisterUploadHandler(IFileUploadHandler *obj, UploadHandler_t handler) override;
 
 	static void start();
 	static void stop();

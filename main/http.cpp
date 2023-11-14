@@ -17,6 +17,7 @@ httpd_handle_t http::_server = nullptr;
 SemaphoreHandle_t http::_send_mutex  = xSemaphoreCreateMutex();
 SemaphoreHandle_t http::_send_task_sem  = xSemaphoreCreateMutex();
 QueueHandle_t http::_rx_task_queue = xQueueCreate(1, RX_SIZE);
+http::_upload_handler http::upload_handler { nullptr, nullptr };
 
 uint8_t http::_rx_buf[RX_SIZE] = { 0 };
 
@@ -56,7 +57,27 @@ const httpd_uri_t http::_ico_uri = {
     .is_websocket = false
 };
 
+const httpd_uri_t http::_file_upload = {
+    .uri       = "/upload/FFFF",   // Match all URIs of type /upload/path/to/file
+    .method    = HTTP_POST,
+    .handler   = http::request_handler_upload,
+    .user_ctx  = NULL    // Pass server data as context
+};
+
+const httpd_uri_t http::_restart = {
+    .uri       = "/upload/Restart",
+    .method    = HTTP_GET,
+    .handler   = http::request_handler_restart,
+    .user_ctx  = NULL    // Pass server data as context
+};
+
 static const char *TAG = "cmb";
+
+void http::RegisterUploadHandler(IFileUploadHandler *obj, UploadHandler_t handler)
+{
+    upload_handler.obj = obj;
+    upload_handler.handler = handler;
+}
 
 esp_err_t http::httpd_open_func(httpd_handle_t hd, int sockfd)
 {
@@ -97,6 +118,8 @@ void http::start_webserver()
     httpd_register_uri_handler(_server, &_ws_uri);
     httpd_register_uri_handler(_server, &_http_uri);
     httpd_register_uri_handler(_server, &_ico_uri);
+    httpd_register_uri_handler(_server, &_file_upload);
+    httpd_register_uri_handler(_server, &_restart);
 }
 
 void http::stop_webserver()
@@ -178,6 +201,8 @@ esp_err_t http::request_handler_http(httpd_req_t *req)
     }
     while (len > 0);
 
+    fclose(f);
+
     return ESP_OK;
 }
 
@@ -205,7 +230,132 @@ esp_err_t http::request_handler_ico(httpd_req_t *req)
     }
     while (len > 0);
 
+    fclose(f);
+
     return ESP_OK;
+}
+
+#define FILE_PATH_MAX (15 + CONFIG_SPIFFS_OBJ_NAME_LEN)
+
+esp_err_t http::request_handler_upload(httpd_req_t *req)
+{
+    char filepath[FILE_PATH_MAX];
+    // FILE *fd = NULL;
+    // struct stat file_stat;
+
+    /* Skip leading "/upload" from URI to get filename */
+    /* Note sizeof() counts NULL termination hence the -1 */
+    // const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
+    //                                          req->uri + sizeof("/upload") - 1, sizeof(filepath));
+    // if (!filename) {
+    //     /* Respond with 500 Internal Server Error */
+    //     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
+    //     return ESP_FAIL;
+    // }
+
+    /* Filename cannot have a trailing '/' */
+    // if (filename[strlen(filename) - 1] == '/') {
+    //     ESP_LOGE(TAG, "Invalid filename : %s", filename);
+    //     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid filename");
+    //     return ESP_FAIL;
+    // }
+
+    // if (stat(filepath, &file_stat) == 0) {
+    //     ESP_LOGE(TAG, "File already exists : %s", filepath);
+    //     /* Respond with 400 Bad Request */
+    //     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File already exists");
+    //     return ESP_FAIL;
+    // }
+
+    /* File cannot be larger than a limit */
+    // if (req->content_len > MAX_FILE_SIZE) {
+    //     ESP_LOGE(TAG, "File too large : %d bytes", req->content_len);
+    //     /* Respond with 400 Bad Request */
+    //     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+    //                         "File size must be less than "
+    //                         MAX_FILE_SIZE_STR "!");
+    //     /* Return failure to close underlying connection else the
+    //      * incoming file content will keep the socket busy */
+    //     return ESP_FAIL;
+    // }
+
+    // fd = fopen(filepath, "w");
+    // if (!fd) {
+    //     ESP_LOGE(TAG, "Failed to create file : %s", filepath);
+    //     /* Respond with 500 Internal Server Error */
+    //     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create file");
+    //     return ESP_FAIL;
+    // }
+
+    ESP_LOGI(TAG, "Receiving file : %s...", req->uri);
+
+    /* Retrieve the pointer to scratch buffer for temporary storage */
+    char buf[0x1000];
+    int received;
+    static int id = 0;
+    /* Content length of the request gives
+     * the size of the file being uploaded */
+    int remaining = req->content_len;
+    
+    id++;
+    while (remaining > 0) {
+
+        // ESP_LOGI(TAG, "Remaining size : %d", remaining);
+        /* Receive the file part by part into a buffer */
+        if ((received = httpd_req_recv(req, buf, sizeof(buf))) <= 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                /* Retry if timeout occurred */
+                continue;
+            }
+
+            /* In case of unrecoverable error,
+             * close and delete the unfinished file*/
+            // fclose(fd);
+            // unlink(filepath);
+
+            ESP_LOGE(TAG, "File reception failed!");
+            /* Respond with 500 Internal Server Error */
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive file");
+            return ESP_FAIL;
+        }
+        
+        (upload_handler.obj->*upload_handler.handler)(id, req->content_len, received, (uint8_t*)buf);
+
+        /* Write buffer content to file on storage */
+        // if (received && (received != fwrite(buf, 1, received, fd))) {
+        //     /* Couldn't write everything to file!
+        //      * Storage may be full? */
+        //     fclose(fd);
+        //     unlink(filepath);
+
+        //     ESP_LOGE(TAG, "File write failed!");
+        //     /* Respond with 500 Internal Server Error */
+        //     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to write file to storage");
+        //     return ESP_FAIL;
+        // }
+
+        /* Keep track of remaining size of
+         * the file left to be uploaded */
+        remaining -= received;
+    }
+
+    /* Close file upon upload completion */
+    // fclose(fd);
+    ESP_LOGI(TAG, "File reception complete");
+
+    /* Redirect onto root to see the updated file list */
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+// #ifdef CONFIG_EXAMPLE_HTTPD_CONN_CLOSE_HEADER
+    httpd_resp_set_hdr(req, "Connection", "close");
+// #endif
+    httpd_resp_sendstr(req, "File uploaded successfully");
+    return ESP_OK;
+}
+
+esp_err_t http::request_handler_restart(httpd_req_t *req)
+{
+    esp_restart();
 }
 
 void http::update_ready_state()
@@ -345,10 +495,18 @@ bool http::receive(uint8_t *data, size_t *len, TickType_t wait)
 
 esp_err_t http::queue_work(void (*work_fn)(void *arg))
 {
+    int sockfd = -1;
+    for (auto wscs: _wscs)
+        if (wscs.second)
+        {
+            sockfd = wscs.first;
+            break;
+        }
+
     if (!is_ready() ||
         !_server ||
         !_wscs.size() ||
-        httpd_ws_get_fd_info(_server, _wscs.begin()->first) != HTTPD_WS_CLIENT_WEBSOCKET) {
+        httpd_ws_get_fd_info(_server, sockfd) != HTTPD_WS_CLIENT_WEBSOCKET) {
             return ESP_FAIL;
         }
 
