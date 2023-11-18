@@ -28,6 +28,8 @@ private:
 	static const httpd_uri_t _ico_uri;
 	static const httpd_uri_t _file_upload;
 	static const httpd_uri_t _restart;
+	static const httpd_uri_t _jquery;
+	static const httpd_uri_t _w3;
 
 	static uint8_t _rx_buf[];
 	static std::map<int, bool> _wscs;
@@ -60,7 +62,10 @@ private:
 	static esp_err_t request_handler_ico(httpd_req_t *req);
 	static esp_err_t request_handler_upload(httpd_req_t *req);
 	static esp_err_t request_handler_restart(httpd_req_t *req);
-	
+	static esp_err_t request_handler_jquery(httpd_req_t *req);
+	static esp_err_t request_handler_w3(httpd_req_t *req);
+	static esp_err_t request_handler_file_get(httpd_req_t *req, char* file_name);
+
 	static void update_ready_state();
 
 	static void ws_async_send(void *arg);

@@ -201,6 +201,13 @@ bool mesh::receive(uint8_t *data, uint16_t *len)
 }
 
 void mesh::init() {
+    wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&config));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    // ESP_ERROR_CHECK(esp_mesh_set_6m_rate(true));
+
+    ESP_ERROR_CHECK(esp_wifi_start());
+
     /*  create network interfaces for mesh (only station instance saved for further manipulation, soft AP instance ignored */
     if (!netif_sta)
         ESP_ERROR_CHECK(esp_netif_create_default_wifi_mesh_netifs(&netif_sta, NULL));

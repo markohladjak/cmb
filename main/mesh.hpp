@@ -47,7 +47,7 @@ class mesh
 	static void deinit();
 	static void set_status(status_t status);
 
-	static void run_mdns();
+	// static void run_mdns();
 
 	static void on_this_became_root();
 	static void on_layer_changed(int layer);

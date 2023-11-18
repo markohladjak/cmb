@@ -71,6 +71,20 @@ const httpd_uri_t http::_restart = {
     .user_ctx  = NULL    // Pass server data as context
 };
 
+const httpd_uri_t http::_jquery = {
+    .uri       = "/jquery-3.3.1.min.js",
+    .method    = HTTP_GET,
+    .handler   = http::request_handler_jquery,
+    .user_ctx  = NULL    // Pass server data as context
+};
+
+const httpd_uri_t http::_w3 = {
+    .uri       = "/w3.js",
+    .method    = HTTP_GET,
+    .handler   = http::request_handler_w3,
+    .user_ctx  = NULL    // Pass server data as context
+};
+
 static const char *TAG = "cmb";
 
 void http::RegisterUploadHandler(IFileUploadHandler *obj, UploadHandler_t handler)
@@ -120,6 +134,8 @@ void http::start_webserver()
     httpd_register_uri_handler(_server, &_ico_uri);
     httpd_register_uri_handler(_server, &_file_upload);
     httpd_register_uri_handler(_server, &_restart);
+    httpd_register_uri_handler(_server, &_jquery);
+    httpd_register_uri_handler(_server, &_w3);
 }
 
 void http::stop_webserver()
@@ -177,14 +193,14 @@ esp_err_t http::request_handler_ws(httpd_req_t *req)
     return ret;
 }
 
-esp_err_t http::request_handler_http(httpd_req_t *req)
+esp_err_t http::request_handler_file_get(httpd_req_t *req, char* file_name)
 {
     ESP_LOGE("http URI", "   %s", req->uri);
 
-    httpd_resp_set_type(req, "text/html");
+    // httpd_resp_set_type(req, "text/html");
     // httpd_resp_set_status(req, );
 
-    FILE* f = fopen("/httpsrc/ws_test.html", "r");
+    FILE* f = fopen(file_name, "r");
     if (f == NULL) {
         ESP_LOGE(TAG, "Failed to open file for reading");
         return ESP_FAIL;
@@ -206,33 +222,33 @@ esp_err_t http::request_handler_http(httpd_req_t *req)
     return ESP_OK;
 }
 
+
+esp_err_t http::request_handler_http(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
+
+    return request_handler_file_get(req, "/httpsrc/ws_test.html");
+}
+
 esp_err_t http::request_handler_ico(httpd_req_t *req)
 {
-    ESP_LOGE("ico URI", "   %s", req->uri);
-
     httpd_resp_set_type(req, "image/ico");
-    // httpd_resp_set_status(req, );
 
-    FILE* f = fopen("/httpsrc/favicon.ico", "r");
-    if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open file for reading");
-        return ESP_FAIL;
-    }
-    char buf[0x1000];
-    int len = 0;
-    
-    do
-    {
-        len = fread(buf, 1, sizeof(buf), f);
-        httpd_resp_send_chunk(req, buf, len);
+    return request_handler_file_get(req, "/httpsrc/favicon.ico");
+}
 
-        // httpd_resp_send(req, "<h1>Hello Secure World!</h1>", HTTPD_RESP_USE_STRLEN);
-    }
-    while (len > 0);
+esp_err_t http::request_handler_jquery(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
 
-    fclose(f);
+    return request_handler_file_get(req, "/httpsrc/jquery-3.3.1.min.js");
+}
 
-    return ESP_OK;
+esp_err_t http::request_handler_w3(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
+
+    return request_handler_file_get(req, "/httpsrc/w3.js");
 }
 
 #define FILE_PATH_MAX (15 + CONFIG_SPIFFS_OBJ_NAME_LEN)
@@ -376,8 +392,8 @@ void http::start(void)
     if (_server)
         return;
 
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &_server));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &_server));
+    // ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &_server));
+    // ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &_server));
 
     start_webserver();
 }
@@ -389,8 +405,8 @@ void http::stop()
         
     stop_webserver();
 
-    ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler));
-    ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler));
+    // ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler));
+    // ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler));
 }
 
 bool http::is_ready()

@@ -1,4 +1,4 @@
-#include "mesh.hpp"
+// #include "mesh.hpp"
 #include "can.hpp"
 #include "http.hpp"
 #include "uart.hpp"
@@ -11,6 +11,8 @@
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 #include "esp_mesh.h"
+#include "MeshNet.hpp"
+#include "TmpNet.hpp"
 #include "mdns.h"
 
 #include "driver/gpio.h"
@@ -29,6 +31,7 @@
 
 #include "esp_spiffs.h"
 #include "FirmwareUpdate.hpp"
+#include "indication.hpp"
 
 extern "C" void app_main(void);
 
@@ -50,6 +53,13 @@ using namespace rutils;
 #define UART_RXD_PIN (GPIO_NUM_5)
 
 
+enum class app_mode_source_t {
+     APP_MODE_SOURCE_GPIO,
+     APP_MODE_SOURCE_NVS
+};
+
+app_mode_source_t app_mode_source = app_mode_source_t::APP_MODE_SOURCE_NVS;
+
 #define MODE_SELECT_PIN0 GPIO_NUM_4
 #define MODE_SELECT_PIN1 GPIO_NUM_12
 
@@ -59,6 +69,8 @@ enum class app_mode_t {
     APP_MODE_DIAGNOSTIC_MESH,
     APP_MODE_APPLICATION
 };
+
+const char * app_mode_names[] = { "APP_MODE_NONE", "APP_MODE_DIAGNOSTIC", "APP_MODE_DIAGNOSTIC_MESH", "APP_MODE_APPLICATION" };
 
 app_mode_t app_mode = app_mode_t::APP_MODE_NONE;
 
@@ -96,6 +108,9 @@ const esp_timer_create_args_t periodic_timer_args = {
 esp_timer_handle_t periodic_timer;
 
 uart *_uart;
+INetwork *net;
+
+indication ind(GPIO_NUM_2);
 
 static const char *LTAG = "cmb";
 
@@ -109,8 +124,8 @@ void on_net_disconnected();
 void print_twai_msg(twai_message_t &msg);
 void print_message(dtp_message &data);
 char* sprint_twai_msg(twai_message_t &msg, char* out_buf);
-void blink_config(int count);
 
+void PrintTasksState();
 
 void twai_rx_task(thread_funct_args& args);
 
@@ -167,7 +182,7 @@ void web_tx(dtp_message& msg)
 
 void net_tx(dtp_message& msg)
 {
-    mesh::send((uint8_t*)&msg, MSG_SIZE);
+    net->send((uint8_t*)&msg, MSG_SIZE);
     // if (xQueueSend(_tx_mesh_queue, &msg, portMAX_DELAY) != pdPASS)
         // ESP_LOGE(LTAG, "_tx_web_queue full");
     ;
@@ -190,13 +205,13 @@ void ui_rx_task(void *arg)
     while (1)
     {
         size_t len;
-        if (!http::receive(_rx_buf, &len, TASK_CONTROL_DELAY))
+        if (!http::receive(_rx_buf, &len, portMAX_DELAY /*TASK_CONTROL_DELAY*/))
             continue;
 
         net_tx(*((dtp_message*)_rx_buf));
         ESP_LOGI("web_rx", "msg: %s", (char *)_rx_buf);
     }
-
+    
     vTaskDelete(NULL);
 }
 
@@ -245,7 +260,7 @@ void send_status()
 {
     msg_info minfo;
     minfo.set_dev_id(DEVICE_ID);
-    mesh::send((uint8_t*)&minfo, MSG_SIZE);
+    net->send((uint8_t*)&minfo, MSG_SIZE);
 }
 
 void proccess_message(const dtp_message *msg)
@@ -276,7 +291,7 @@ void net_rx_task(void *arg)
 
     while (1) {
         len = MESH_MPS;
-        while (!mesh::receive(msg_buf, &len)) 
+        while (!net->receive(msg_buf, &len)) 
             vTaskDelay(1);
     
         int msg_count = len / MSG_SIZE;
@@ -289,11 +304,10 @@ void net_rx_task(void *arg)
             if (msg->get_dev_id() != DEVICE_ID)
                 proccess_message(msg);
 
-            
             auto t = msg->get_type();
             if (t == DTPT_CAN_DATA || t == DTPT_INFO)
-            if (mesh::is_root())
-                web_tx(*msg);
+                if (net->is_root())
+                    web_tx(*msg);
         }
     }
     vTaskDelete(NULL);
@@ -361,6 +375,9 @@ void twai_rx(void* arg)
         if (!twai_in_filter(msg.twai_msg))
             continue;
 
+        if (!(_can_msg_id % 10))
+            ind.flash();
+
         msg.set_dev_id(DEVICE_ID);
         msg.set_id(_can_msg_id++);
 
@@ -375,7 +392,7 @@ void twai_rx(void* arg)
         return;
     }
 
-    mesh::send((uint8_t*)_msgs_buff, i * MSG_SIZE);
+    net->send((uint8_t*)_msgs_buff, i * MSG_SIZE);
 
 {
         auto t0 = esp_timer_get_time();
@@ -408,7 +425,7 @@ void twai_rx(void* arg)
 //     while (1)
 //     {
 //         if ( xQueueReceive(_tx_mesh_queue, data,  portMAX_DELAY ) == pdPASS) {
-//             mesh::send(data, MSG_SIZE);
+//             net->send(data, MSG_SIZE);
 //         }
 //     }
 
@@ -429,13 +446,13 @@ void start_twai_rx_task()
 
 void start_web_rx_task()
 {
-    _web_rx_task_run = true;
-    xTaskCreatePinnedToCore(ui_rx_task, "WebRX", 4096, NULL, 7, NULL, tskNO_AFFINITY);
+    // _web_rx_task_run = true;
+    xTaskCreatePinnedToCore(ui_rx_task, "WebRX", 8192, NULL, 7, NULL, tskNO_AFFINITY);
 }
 
 void stop_web_rx_task()
 {
-    _web_rx_task_run = false;
+    // _web_rx_task_run = false;
 }
 
 void start_net_rx_task()
@@ -454,9 +471,9 @@ void on_self_is_root()
 
 void on_net_connected()
 {
-    blink_config(mesh::is_root()?1:2);
+    ind.blink_config(net->is_root()?1:2);
 
-    if (!mesh::is_root()) {
+    if (!net->is_root()) {
         send_status();
         return;
     }
@@ -464,20 +481,20 @@ void on_net_connected()
     http::start();
     run_mdns();
 
-    start_web_rx_task();
+    // start_web_rx_task();
 }
 
 void on_net_disconnected()
 {
-    blink_config(0);
+    ind.blink_config(0);
 
-    if (!mesh::is_root())
+    if (!net->is_root())
         return;
 
     http::stop();
     stop_mdns();
 
-    stop_web_rx_task();
+    // stop_web_rx_task();
 }
 
 void run_mdns() {
@@ -574,7 +591,7 @@ void on_init()
     ESP_LOGI("on_init", "size of dtp_message: %d", sizeof(dtp_message));
     ESP_LOGI("on_init", "size of twai_message_t: %d", sizeof(twai_message_t));
     ESP_LOGI("on_init", "portTICK_RATE_MS: %lu", 1 * 1000 / portTICK_PERIOD_MS);
-    ESP_LOGI("", "Task priorities: %d", configMAX_PRIORITIES);
+    ESP_LOGI("on_init", "Task priorities: %d", configMAX_PRIORITIES);
     // ESP_LOGI("", "Task priorities: %d", esp_meh);
 }
 
@@ -582,8 +599,24 @@ app_mode_t get_app_mode()
 {
     uint8_t mode = 0;
 
+    if (app_mode_source == app_mode_source_t::APP_MODE_SOURCE_NVS)
+        return app_mode_t::APP_MODE_DIAGNOSTIC_MESH;
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = ((1ULL << MODE_SELECT_PIN0) | (1ULL << MODE_SELECT_PIN1)),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    gpio_config(&io_conf);
+
     if (!gpio_get_level(MODE_SELECT_PIN0)) mode |= 1 << 0;
     if (!gpio_get_level(MODE_SELECT_PIN1)) mode |= 1 << 1;
+
+    gpio_reset_pin(MODE_SELECT_PIN0);
+    gpio_reset_pin(MODE_SELECT_PIN1);
 
     switch (mode)
     {
@@ -624,21 +657,9 @@ void init_spiffs()
 
 void init()
 {
-    init_spiffs();
-
-    gpio_config_t io_conf = {
-        .pin_bit_mask = ((1ULL << MODE_SELECT_PIN0) | (1ULL << MODE_SELECT_PIN1)),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-
-    gpio_config(&io_conf);
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
 
     app_mode = get_app_mode();
-    
-    ESP_LOGI(LTAG, "application mode %d\n", (int)app_mode);
 
     while (!DEVICE_ID) {
         ESP_LOGE(LTAG, "DEVICE_ID not set...");
@@ -646,8 +667,6 @@ void init()
     }
 
     on_init();
-
-    esp_log_level_set("*", ESP_LOG_VERBOSE);
 
     // Initialize NVS.
     esp_err_t err = nvs_flash_init();
@@ -662,58 +681,33 @@ void init()
 
     ESP_ERROR_CHECK(err);
 
-    ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+}
 
-    wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&config));
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    // ESP_ERROR_CHECK(esp_mesh_set_6m_rate(true));
+void init_net()
+{
+    ESP_ERROR_CHECK(esp_netif_init());
 
-    ESP_ERROR_CHECK(esp_wifi_start());
+    switch (app_mode)
+    {
+    case app_mode_t::APP_MODE_DIAGNOSTIC:
+        net = new TmpNet;
+        break;
+    case app_mode_t::APP_MODE_DIAGNOSTIC_MESH:
+        net = new MeshNet;
+        break;
+    default:
+        break;
+    }
 
                                     // ??????? Wrong parameter order
-    _tx_web_queue = xQueueCreate(MSG_SIZE, TX_WEB_QUEUE_SIZE);
+    _tx_web_queue = xQueueCreate(TX_WEB_QUEUE_SIZE, MSG_SIZE);
 
     // _tx_mesh_queue = xQueueCreate(MSG_SIZE, TX_MESH_QUEUE_SIZE);
 
-    mesh::OnIsRootCallbackRegister(on_self_is_root);
-    mesh::OnIsConnectedCallbackRegister(on_net_connected);
-    mesh::OnIsDisconnectedCallbackRegister(on_net_disconnected);
-}
-
-void blink_config(int count)
-{
-	static int _count;
-	static TaskHandle_t task = NULL;;
-	static bool exit_request = false;
-
-	_count = count;
-
-    #define GPIO_NUM GPIO_NUM_2
-
-    gpio_reset_pin(GPIO_NUM);
-    gpio_set_direction(GPIO_NUM, GPIO_MODE_OUTPUT);	
-
-	if (task)
-		return;
-
-
-	xTaskCreatePinnedToCore([](void *) {
-		while(!exit_request) {
-			for (int i=0; i<_count; i++) {
-				TaskDelay(1000 / 2 - 1000 / 4);
-                gpio_set_level(GPIO_NUM, 1);
-				TaskDelay(1000 / 4);
-                gpio_set_level(GPIO_NUM, 0);
-			}
-
-			TaskDelay(2000);
-		}
-
-		exit_request = false;
-		vTaskDelete(NULL);
-	}, "MT1", 1000, NULL, 1, &task, tskNO_AFFINITY);
+    net->OnIsRootCallbackRegister(on_self_is_root);
+    net->OnIsConnectedCallbackRegister(on_net_connected);
+    net->OnIsDisconnectedCallbackRegister(on_net_disconnected);
 }
 
 void run_application()
@@ -725,14 +719,27 @@ void app_main(void)
 {
     init();
 
-    http *http_server = new http();
-    FirmwareUpdate *update = new FirmwareUpdate(http_server);
-
     can can(GPIO_NUM_21, GPIO_NUM_22);
     // can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
 
-    mesh::start();
     can::start(can::speed_t::_100KBITS, TWAI_MODE_NORMAL);
+
+    ESP_LOGI(LTAG, "application mode %s\n", app_mode_names[(int)app_mode + 1]);
+
+    if (app_mode == app_mode_t::APP_MODE_APPLICATION)
+    {
+        run_application();
+
+        return;
+    }
+
+    init_spiffs();
+    init_net();
+
+    http *http_server = new http();
+    FirmwareUpdate *update = new FirmwareUpdate(http_server);
+
+    net->start();
 
     // _uart = new uart(UART_NUM_1, UART_RXD_PIN, UART_TXD_PIN);
     // _uart->start();
@@ -742,23 +749,6 @@ void app_main(void)
 
 
     start_twai_rx_task();
-
-    if (app_mode == app_mode_t::APP_MODE_APPLICATION)
-    {
-        run_application();
-    }
-
-
-
-    // twai_message_t tm;
-    
-    // for (;;)
-    // {
-    //     can::receive(tm);
-    //     print_twai_msg(tm);
-
-    //     tm.identifier = 0x111;
-    //     can::transmit(tm);        
-    // }
+    start_web_rx_task();
 
 }

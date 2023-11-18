@@ -188,7 +188,7 @@ void can::start(speed_t speed, twai_mode_t mode)
     g_config.mode = mode;
 
     ESP_ERROR_CHECK(twai_driver_install(&g_config, t_config, &f_config));
-    ESP_LOGI("", "Driver installed");
+    ESP_LOGI("CAN", "Driver installed");
 
     ESP_ERROR_CHECK(twai_start());
 

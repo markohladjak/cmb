@@ -1,5 +1,5 @@
-#ifndef IFILEUPLOAD
-#define IFILEUPLOAD
+#ifndef IFILEUPLOAD_H
+#define IFILEUPLOAD_H
 #pragma once
 
 #include "stddef.h"
