@@ -22,6 +22,9 @@ http::_upload_handler http::upload_handler { nullptr, nullptr };
 uint8_t http::_rx_buf[RX_SIZE] = { 0 };
 
 std::map<int, bool> http::_wscs;
+
+int http::_sockfd = -1;
+
 bool http::_is_ready = false;
 std::atomic<int32_t> works_count(0);
 
@@ -104,15 +107,21 @@ esp_err_t http::httpd_open_func(httpd_handle_t hd, int sockfd)
 
 void http::httpd_close_func(httpd_handle_t hd, int sockfd)
 {
-    ESP_LOGI(TAG, "httpd_close_func ID: %d", sockfd);
+    ESP_LOGI(TAG, "httpd_close_func ID: %d%s", sockfd, _wscs[sockfd] ? "ws" : "");
 
     _wscs.erase(sockfd);
+    if (sockfd == _sockfd)
+        _sockfd = -1;
+        
     update_ready_state();
+    
+    close(sockfd);
 }
 
 void http::start_webserver()
 {
     _is_ready = false;
+    _sockfd = -1;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     
     config.open_fn = httpd_open_func;
@@ -142,6 +151,7 @@ void http::stop_webserver()
 {
     ESP_LOGI(TAG, "Stopping webserver");
     _is_ready = false;
+    _sockfd = -1;
 
     httpd_stop(_server);
 
@@ -167,6 +177,11 @@ esp_err_t http::request_handler_ws(httpd_req_t *req)
     ESP_LOGE("ws URI", "   %s", req->uri);
 
     if (req->method == HTTP_GET) {
+        _sockfd = httpd_req_to_sockfd(req);
+        _wscs[_sockfd] = true;
+        
+        update_ready_state();
+
         ESP_LOGI(TAG, "Handshake done, the new connection was opened");
         return ESP_OK;
     }
@@ -184,9 +199,6 @@ esp_err_t http::request_handler_ws(httpd_req_t *req)
     }
 
     // ESP_LOGI(TAG, "Got packet type: %d  with message: %s", ws_pkt.type, ws_pkt.payload);
-    
-    _wscs[httpd_req_to_sockfd(req)] = true;
-    update_ready_state();
 
     xQueueSend(_rx_task_queue, _rx_buf, 0/*portMAX_DELAY*/);
 
@@ -376,10 +388,10 @@ esp_err_t http::request_handler_restart(httpd_req_t *req)
 
 void http::update_ready_state()
 {
-    _is_ready = false;
+    _is_ready = _sockfd > -1;
     
-    for (auto &fd: _wscs)
-        _is_ready = _is_ready || fd.second;
+    // for (auto &fd: _wscs)
+        // _is_ready = _is_ready || fd.second;
 }
 
 void http::ws_async_send(void *arg)
@@ -484,21 +496,13 @@ void http::send_async(uint8_t *data, size_t len)
         .len = len
     };
 
-    int sockfd = -1;
-    for (auto wscs: _wscs)
-        if (wscs.second)
-        {
-            sockfd = wscs.first;
-            break;
-        }
-
-    if (sockfd < 0)
+    if (_sockfd < 0)
     {        
         ESP_LOGE("cmb", "send_async error %s", "no WebSocket connections active");
         return;
     }
 
-    esp_err_t err = httpd_ws_send_frame_async(_server, sockfd, pkt);
+    esp_err_t err = httpd_ws_send_frame_async(_server, _sockfd, pkt);
 
     if (err != ESP_OK) 
         ESP_LOGE("cmb", "send_async error %s", esp_err_to_name(err));
@@ -511,20 +515,23 @@ bool http::receive(uint8_t *data, size_t *len, TickType_t wait)
 
 esp_err_t http::queue_work(void (*work_fn)(void *arg))
 {
-    int sockfd = -1;
-    for (auto wscs: _wscs)
-        if (wscs.second)
-        {
-            sockfd = wscs.first;
-            break;
-        }
+    // int sockfd = -1;
+    // for (auto wscs: _wscs)
+    //     if (wscs.second)
+    //     {
+    //         sockfd = wscs.first;
+    //         break;
+    //     }
 
-    if (!is_ready() ||
-        !_server ||
-        !_wscs.size() ||
-        httpd_ws_get_fd_info(_server, sockfd) != HTTPD_WS_CLIENT_WEBSOCKET) {
-            return ESP_FAIL;
-        }
+    // if (!is_ready() 
+    // ||
+        // !_server ||
+        // !_wscs.size() ||
+        // httpd_ws_get_fd_info(_server, _sockfd) != HTTPD_WS_CLIENT_WEBSOCKET
+        // ) 
+        // {
+        //     return ESP_FAIL;
+        // }
 
     return httpd_queue_work(_server, work_fn, nullptr);
 }

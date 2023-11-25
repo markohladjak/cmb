@@ -32,6 +32,7 @@
 #include "esp_spiffs.h"
 #include "FirmwareUpdate.hpp"
 #include "indication.hpp"
+#include "Signal.h"
 
 extern "C" void app_main(void);
 
@@ -110,6 +111,11 @@ esp_timer_handle_t periodic_timer;
 uart *_uart;
 INetwork *net;
 
+#ifdef SIGNAL_MONITOR
+Signal *raw_signal;
+thread_ctl signal_thread(signal_rx_task, false, "SignalRX", NULL, 0x1000, false, 9);
+#endif
+
 indication ind(GPIO_NUM_2);
 
 static const char *LTAG = "cmb";
@@ -128,6 +134,7 @@ char* sprint_twai_msg(twai_message_t &msg, char* out_buf);
 void PrintTasksState();
 
 void twai_rx_task(thread_funct_args& args);
+void signal_rx_task(thread_funct_args& args);
 
 
 thread_ctl twai_thread(twai_rx_task, false, "TwaiRX", NULL, 16384, false, 9);
@@ -168,7 +175,7 @@ void web_tx(dtp_message& msg)
         // ESP_LOGE(LTAG, "_tx_web_queue full");
     ;
 
-    if (_web_send_work_done) {
+    if (http::is_ready() && _web_send_work_done) {
         _web_send_work_done = false;
         // while (http::queue_work(web_send_work) != ESP_OK) {
         if (http::queue_work(web_send_work) != ESP_OK) {
@@ -197,6 +204,42 @@ void twai_rx_task(thread_funct_args& args)
         twai_rx();
     }
 }
+
+#ifdef SIGNAL_MONITOR
+void signal_rx_task(thread_funct_args& args) 
+{
+    uint8_t buf[sizeof(msg_signal) + 64 * sizeof(rmt_symbol_word_t)];
+    msg_signal &msg = *new(buf) msg_signal;
+    rmt_symbol_word_t *words = (rmt_symbol_word_t*)&msg.bytes_ptr;
+
+    msg.set_dev_id(DEVICE_ID);
+
+    size_t data_len;
+
+    while (!args._exit_signal) 
+    {
+        data_len = sizeof(buf);
+
+        if (!raw_signal->receive((rmt_symbol_word_t*)&msg.bytes_ptr, &data_len, portMAX_DELAY)) {
+            vTaskDelay(1);
+            continue;
+        }
+
+        printf("NEC frame start---\r\n");
+        for (size_t i = 0; i < data_len; i++) {
+            printf("{%d:%d},{%d:%d}\r\n", words[i].level0, words[i].duration0,
+                words[i].level1, words[i].duration1);
+        }
+        printf("---NEC frame end: \r\n");
+        // uint8_t *buf = new uint8_t[sizeof(msg_signal) + data->num_symbols * sizeof(rmt_symbol_word_t)]; 
+        // msg.num_bytes = data->num_symbols;
+        // msg.
+        msg.num_bytes = data_len;
+        net->send((uint8_t*)&msg, MSG_SIZE);
+
+    }
+}
+#endif
 
 void ui_rx_task(void *arg)
 {
@@ -719,10 +762,12 @@ void app_main(void)
 {
     init();
 
+#ifndef SIGNAL_MONITOR
     can can(GPIO_NUM_21, GPIO_NUM_22);
     // can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
 
     can::start(can::speed_t::_100KBITS, TWAI_MODE_NORMAL);
+#endif
 
     ESP_LOGI(LTAG, "application mode %s\n", app_mode_names[(int)app_mode + 1]);
 
@@ -732,6 +777,11 @@ void app_main(void)
 
         return;
     }
+
+#ifdef SIGNAL_MONITOR
+    raw_signal = new Signal(GPIO_NUM_22, 10000000, 9000, 51000);
+    signal_thread.run();
+#endif
 
     init_spiffs();
     init_net();
@@ -747,8 +797,10 @@ void app_main(void)
     start_net_rx_task();
     // start_uart_rx_task();
 
-
+#ifndef SIGNAL_MONITOR
     start_twai_rx_task();
+#endif
+
     start_web_rx_task();
 
 }

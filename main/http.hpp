@@ -34,6 +34,7 @@ private:
 	static uint8_t _rx_buf[];
 	static std::map<int, bool> _wscs;
 
+	static int _sockfd;
 	static bool _is_ready;
 
 	static httpd_handle_t _server;

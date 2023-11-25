@@ -9,6 +9,7 @@ enum dtp_message_t {
     DTPT_INFO = 1,
     DTPT_REQUEST = 2,
     DTPT_CAN_DATA = 8,
+    DTPT_SIGNAL_DATA = 9
 };
 
 class msg_can_data;
@@ -73,6 +74,16 @@ public:
         : dtp_message { id }
     {
         _type = DTPT_CAN_DATA;
+    }
+};
+
+struct msg_signal: public dtp_message
+{
+    uint16_t num_bytes;  
+    uint8_t bytes_ptr;
+    
+    msg_signal() {
+        _type = DTPT_SIGNAL_DATA;
     }
 };
 

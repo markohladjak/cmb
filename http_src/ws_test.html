@@ -8,26 +8,8 @@
     <script src="script.js"></script> -->
 </head>
 <style>
-    table, th {
-      border:1px solid black;
-      background-color: gray;
-    }
-
-    td {
-        font-family: 'Courier New', Courier, monospace;
-		font-style: normal;
-		font-weight: bold;
-		font-size: 14px;
-    }
-
-    /* #devices_view_container {
-    } */
-
-    .data_block {
-        font-family: 'Courier New', Courier, monospace;
-		font-style: normal;
-		font-weight: bold;
-		font-size: 14px;
+    #devices_view_container {
+        /* background-color: aqua; */
     }
 
     .twai_data_view_style {
@@ -40,20 +22,8 @@
         border: rebeccapurple 3px solid; 
 
         vertical-align: top;
-    }
 
-    #msg_to_send {
-        font-family: 'Courier New', Courier, monospace;
-		font-style: normal;
-		font-weight: bold;
-		font-size: 14px;
-
-        margin-left: 20px;
-        color: black;
-        background-color: rgb(233, 235, 252);
-        border: rebeccapurple 3px solid; 
-        
-        width: 300px;
+        width: 335px;
     }
 
     .toggle-button {
@@ -86,13 +56,135 @@
     textarea {
         resize: vertical;
     }
+
+    html { 
+        position:absolute;
+        top:0px; bottom:0px; right: 0px; left: 0px;
+        /* border: black 3px solid;  */
+        margin: 0;
+    }
+    body { 
+        position:absolute; 
+        top:0px; bottom:0px; right: 0px; left: 0px;
+        /* background-color: blue; */
+        /* border: red 3px solid;  */
+        overflow: hidden;
+        margin: 0;
+    }
+
+    /* .main_block { */
+        /* display: inline-block; */
+        /* background-color: green; */
+        /* height: 100%; */
+        /* column-count: 3; */
+    /* } */
+
+    .side_bar {
+        position: relative;
+        background-color: #bbc1e1;
+        /* padding: 10px;  */
+        /* position: absolute;  */
+        /* bottom: 0; top: 0; */
+        height: 100%;
+        width: 350px;
+        /* display: ; */
+        /* margin: 20px; */
+        float: left;
+    }
+
+    .common_block {
+        /* display: inline-block; */
+        /* background-color: antiquewhite; */
+        overflow-x: scroll;
+        white-space: nowrap;
+        height: 100%;
+    }
+
+    .data_block {
+        font-family: 'Courier New', Courier, monospace;
+		font-style: normal;
+		font-weight: bold;
+		font-size: 14px;
+
+        color: black;
+        background-color: rgb(233, 235, 252);
+        border: rebeccapurple 3px solid; 
+    }
+
+    #script_block {
+        position: relative;
+        /* display: inline-block; */
+        height: 70%;
+        padding: 10px;
+        /* background-color: royalblue; */
+    }
+
+    #script_data_block {
+        display: block;
+        resize: vertical;
+        /* background-color: black; */
+        /* position: absolute; */
+        /* padding: 0;
+        margin: 0; */
+        width: 96%;
+        /* right: 10px;
+        left: 0;
+        bottom: 200px; */
+        /* height: 100%; */
+        /* top: 100px; */
+    }
+
+    #update_form {
+        margin-top: 50px;
+    }
+
+    .main_block {
+        /* background-color: green; */
+        position: absolute; 
+        top: 50px; bottom: 0; left: 0; right: 0;
+    }
 </style>
 
-<script src="https://w3.p2hp.com/lib/w3.js"></script>
-<script src="https://code.jquery.com/jquery-3.5.0.js"></script>
+<!-- <script src="https://w3.p2hp.com/lib/w3.js"></script>
+<script src="https://code.jquery.com/jquery-3.5.0.js"></script> -->
+<script src="w3.js"></script>
+<script src="jquery-3.3.1.min.js"></script>
+
 
 <body>
-    <div id="status_bar">
+    <div style="background-color: rgb(116, 42, 143); height: 50px; width: 100%; position: fixed; top: 0px;"></div>
+    <div class="main_block">
+        <div class="side_bar">
+            <div id="script_block">
+                <div>Script</div>
+                <textarea id="script_data_block" class="data_block" rows="25">
+43F 8 10 60 61 ff 00 00 00 00
+                </textarea>
+                <!-- <input id="msg_to_send" type="text" value="123AA678 8 10 1A 2B 7C AD EF FF 44"> -->
+                <button onclick="onClickSend()">Transmit selected</button>
+                <button onclick="onClickSendAll()">Transmit All</button>
+            </div>
+            <div id="update_form">
+                <form enctype="multipart/form-data">
+                    <input id="upload_file" name="file" type="file" />
+                    <input id="upload_button" type="button" value="Upload" />
+                    <input id="restart_button" type="button" value="Restart" />
+                </form>
+                <progress></progress>
+            </div>
+        </div>
+        <div class="common_block">
+            <div id="devices_view_container">
+                <template id="twai_data_view_template">
+                    <div class="twai_data_view_style data_block">
+                        <div class="device_id_field" style="height: 30px; width: 200px;"></div>
+                        <div class="list_view"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+    <div id="status_bar" style="position: fixed; bottom: 0; background-color: #adb5e1; width: 100%;">
         <label>Transfer rate:</label>
         <span id="tr_rate_pkt"></span>
         <span> pkt/s</span>
@@ -103,79 +195,6 @@
         <label>Status:</label>
         <span id="tr_net_status"></span>
     </div>
-    <button onclick="onClickButton1()">Trigger async</button>
-    <button onclick="onClickButton2()">Abrakadabra</button>
-    <!-- <button onclick="onClickButton3()">Show Stream</button> -->
-    <div style="display: inline-block;">
-        <input type="checkbox" class="toggle-button" onchange="onClickButton3(this)">
-        <label for="toggle-button" class="text">Show Stream</label>
-    </div>
-    <button onclick="onClickButton4()">Show All</button>
-
-    <div>
-        <form enctype="multipart/form-data">
-            <input id="upload_file" name="file" type="file" />
-            <input id="upload_button" type="button" value="Upload" />
-            <input id="restart_button" type="button" value="Restart" />
-        </form>
-        <progress></progress>
-    </div>
-
-    <div class="data_block">
-        <div>
-            <textarea id="msg_to_send" rows="7">
-43F 8 10 60 61 ff 00 00 00 00
-43F 8 14 67 61 ff 00 00 00 00
-43F 8 14 66 61 ff 00 00 00 00
-43F 8 14 65 61 ff 00 00 00 00
-
-43F 8 11 68 61 ff 00 00 00 00
-43F 8 12 68 61 ff 00 00 00 00
-43F 8 13 68 61 ff 00 00 00 00
-43F 8 14 68 61 ff 00 00 00 00
-43F 8 15 68 61 ff 00 00 00 00
-43F 8 16 68 61 ff 00 00 00 00
-43F 8 17 68 61 ff 00 00 00 00
-            </textarea>
-            <!-- <input id="msg_to_send" type="text" value="123AA678 8 10 1A 2B 7C AD EF FF 44"> -->
-            <button onclick="onClickSend()">Send</button>
-            <button onclick="onClickSendAll()">Send All</button>
-        </div>
-
-        <div id="devices_view_container">
-            <template id="twai_data_view_template">
-                <div class="twai_data_view_style">
-                    <div class="device_id_field" style="height: 30px; width: 200px;"></div>
-                    <div class="list_view"></div>
-                </div>
-            </template>
-        </div>
-    </div>
-
-    <table id="common_can_msg" style="width: 100%; height: 100%; display: none;">
-        <tr>
-            <th>TimeL</th>
-            <th>TimeH</th> 
-            <th>ID</th>
-            <th>Type</th>
-            <th>DevID</th>
-            <th>Flags</th>
-            <th>Identifier</th>
-            <th>Len</th>
-            <th>Data</th>
-          </tr>
-          <tr w3-repeat="pkgs">
-            <td>{{td_tl}}</td>
-            <td>{{td_th}}</td>
-            <td>{{td_id}}</td>
-            <td>{{td_type}}</td>
-            <td>{{td_dev_id}}</td>
-            <td>{{td_flags}}</td>
-            <td>{{td_identifier}}</td>
-            <td>{{td_data_length_code}}</td>
-            <td>{{td_d0}}&nbsp;{{td_d1}}&nbsp;{{td_d2}}&nbsp;{{td_d3}}&nbsp;{{td_d4}}&nbsp;{{td_d5}}&nbsp;{{td_d6}}&nbsp;{{td_d7}}</td>
-          </tr>
-    </table>
 <script>
         var ShowStream = true;
         var count = 0;
@@ -201,8 +220,8 @@
     // const socket = new WebSocket('ws://10.10.10.2:80/ws');  
     // const socket = new WebSocket('ws://192.168.0.111:80/ws');
     // const socket = new WebSocket('ws://192.168.0.103:80/ws');
-    // const socket = new WebSocket('ws://cmb.local:80/ws');
-    const socket = new WebSocket('ws://' + location.host + ':80/ws');
+    const socket = new WebSocket('ws://cmb.local:80/ws');
+    // const socket = new WebSocket('ws://' + location.host + ':80/ws');
     
     // const socket = new WebSocket('ws://192.168.178.130:80/ws');
     
@@ -256,6 +275,9 @@
 
         if (type == 1)
             createDeviceView(dev_id);
+
+        if (type == 9)
+            printSignal(msg);
     }
 
     function createDeviceView(dev_id)
@@ -342,6 +364,19 @@
         w3.displayObject(targetID, row);
     }
 
+    function printSignal(msg)
+    {
+        console.log(msg);
+        console.log("NEC frame start---");
+        const w = new Uint16Array(msg, 16, (msg.byteLength - 16) / 2);
+
+        for (let i = 0; i < 8; i+=2) {
+            console.log('{', w[i] >> 15, ':', w[i] & 0x7FFF, '},{', w[i+1] >> 15, ':', w[i+1] & 0x7FFF, '}');
+        }
+        
+        console.log("---NEC frame end:");
+    }
+
     // socket.add
     // setInterval(myTimer, 1000);
     // function myTimer() {
@@ -401,8 +436,8 @@
 
     function onClickSend()
     {
-        const text = $("#msg_to_send").val();
-        const curet = $("#msg_to_send")[0].selectionStart;
+        const text = $("#script_data_block").val();
+        const curet = $("#script_data_block")[0].selectionStart;
         const row = text.substr(0, curet).split("\n").length;
         const rows = text.split("\n");
 
@@ -439,8 +474,8 @@
 
     function onClickSendAll()
     {
-        const text = $("#msg_to_send").val();
-        const curet = $("#msg_to_send")[0].selectionStart;
+        const text = $("#script_data_block").val();
+        const curet = $("#script_data_block")[0].selectionStart;
         const row = text.substr(0, curet).split("\n").length;
         const rows = text.split("\n");
 
@@ -491,7 +526,7 @@
         socket.send(buff);
     }
     
-    $("#msg_to_send").keypress(function(e){
+    $("#script_data_block").keypress(function(e){
         if (e.keyCode == 13 && e.shiftKey)
             return;
 
