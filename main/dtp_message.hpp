@@ -9,20 +9,20 @@ enum dtp_message_t {
     DTPT_INFO = 1,
     DTPT_REQUEST = 2,
     DTPT_CAN_DATA = 8,
-    DTPT_SIGNAL_DATA = 9
+    DTPT_SIGNAL_DATA = 9,
+    DTPT_RUN_SCRIPT = 10,
 };
 
 class msg_can_data;
 
 class dtp_message {
+public:
     int64_t _time_stamp;
     int32_t _id = -1;
 
-protected:
     uint8_t _type;
     uint8_t _dev_id = 0;
 
-public:
     dtp_message() {}
 
     dtp_message(int32_t id)
@@ -39,11 +39,11 @@ public:
 
     uint8_t dev_id() { return _dev_id; }
     void set_dev_id(uint8_t dev_id) { _dev_id = dev_id; }
-    uint8_t get_dev_id() { return _dev_id; }
+    uint8_t get_dev_id() const { return _dev_id; }
     void set_time_stamp() { _time_stamp = 0; }
     void set_type(uint8_t type) { _type = type; }
     uint8_t get_type() const { return _type; }
-    int32_t get_id() { return _id; }
+    int32_t get_id() const { return _id; }
 };
 
 class msg_info: public dtp_message
@@ -85,6 +85,16 @@ struct msg_signal: public dtp_message
     msg_signal() {
         _type = DTPT_SIGNAL_DATA;
     }
+};
+
+struct msg_run_script: public dtp_message
+{
+    char script_name[256];
+};
+
+struct msg_upload_file: public dtp_message
+{
+
 };
 
 #endif

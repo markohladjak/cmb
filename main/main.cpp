@@ -33,12 +33,14 @@
 #include "FirmwareUpdate.hpp"
 #include "indication.hpp"
 #include "Signal.h"
+#include "Script.h"
 
 extern "C" void app_main(void);
 
 using namespace rutils;
 
 #define DEVICE_ID 28
+int _device_id = 0;
 
 #define CF_UART_ENABLED 1
 #define CF_MESH_ENABLED 1
@@ -111,12 +113,9 @@ esp_timer_handle_t periodic_timer;
 uart *_uart;
 INetwork *net;
 
-#ifdef SIGNAL_MONITOR
-Signal *raw_signal;
-thread_ctl signal_thread(signal_rx_task, false, "SignalRX", NULL, 0x1000, false, 9);
-#endif
-
 indication ind(GPIO_NUM_2);
+
+Script trace(2000);
 
 static const char *LTAG = "cmb";
 
@@ -138,6 +137,14 @@ void signal_rx_task(thread_funct_args& args);
 
 
 thread_ctl twai_thread(twai_rx_task, false, "TwaiRX", NULL, 16384, false, 9);
+
+
+// #define SIGNAL_MONITOR 1
+
+#ifdef SIGNAL_MONITOR
+Signal *raw_signal;
+thread_ctl signal_thread(signal_rx_task, false, "SignalRX", NULL, 0x1000, false, 9);
+#endif
 
 
 void TaskDelay(uint16_t ms)
@@ -212,7 +219,7 @@ void signal_rx_task(thread_funct_args& args)
     msg_signal &msg = *new(buf) msg_signal;
     rmt_symbol_word_t *words = (rmt_symbol_word_t*)&msg.bytes_ptr;
 
-    msg.set_dev_id(DEVICE_ID);
+    msg.set_dev_id(_device_id);
 
     size_t data_len;
 
@@ -302,8 +309,13 @@ void proccess_can_data(const msg_can_data *message)
 void send_status()
 {
     msg_info minfo;
-    minfo.set_dev_id(DEVICE_ID);
+    minfo.set_dev_id(_device_id);
     net->send((uint8_t*)&minfo, MSG_SIZE);
+}
+
+void run_script(char *name)
+{
+    
 }
 
 void proccess_message(const dtp_message *msg)
@@ -319,6 +331,9 @@ void proccess_message(const dtp_message *msg)
         send_status();
         break;
     case DTPT_INFO:
+        break;
+    case DTPT_RUN_SCRIPT:
+        run_script(((msg_run_script*)msg)->script_name);
         break;
     default:
         unknown_type = true;
@@ -344,7 +359,7 @@ void net_rx_task(void *arg)
         {
             auto msg = (dtp_message*)(msg_buf + msg_n++ * MSG_SIZE);
 
-            if (msg->get_dev_id() != DEVICE_ID)
+            if (msg->get_dev_id() != _device_id)
                 proccess_message(msg);
 
             auto t = msg->get_type();
@@ -402,6 +417,11 @@ bool twai_msg_receive(twai_message_t &msg)
     }
 }
 
+void on_msg_received(msg_can_data& msg)
+{
+    trace.add_entrie(msg);
+}
+
 void twai_rx(void* arg)
 {
     int i = 0;
@@ -421,8 +441,10 @@ void twai_rx(void* arg)
         if (!(_can_msg_id % 10))
             ind.flash();
 
-        msg.set_dev_id(DEVICE_ID);
+        msg.set_dev_id(_device_id);
         msg.set_id(_can_msg_id++);
+
+        on_msg_received(msg);
 
         if (msg.twai_msg.data_length_code == 8)
             ((uint8_t*)(&msg.twai_msg.flags))[3] = msg.twai_msg.data[7];
@@ -587,9 +609,9 @@ void print_state_report()
 
 void PrintTasksState()
 {
-    uint8_t _rx_buf[3000] = { 0 };
+    static uint8_t _rx_buf[3000] = { 0 };
 
-    // vTaskGetRunTimeStats((char*)_rx_buf);
+    vTaskGetRunTimeStats((char*)_rx_buf);
     printf("Name          State   Priority  Stack  Num\n\
 ******************************************\n");
 
@@ -698,20 +720,8 @@ void init_spiffs()
     }
 }
 
-void init()
+void init_nvs()
 {
-    esp_log_level_set("*", ESP_LOG_VERBOSE);
-
-    app_mode = get_app_mode();
-
-    while (!DEVICE_ID) {
-        ESP_LOGE(LTAG, "DEVICE_ID not set...");
-        TaskDelay(1000);
-    }
-
-    on_init();
-
-    // Initialize NVS.
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         // 1.OTA app partition table has a smaller NVS partition size than the non-OTA
@@ -723,6 +733,41 @@ void init()
     }
 
     ESP_ERROR_CHECK(err);
+}
+
+void load_device_config()
+{
+#ifdef DEVICE_ID
+    _device_id = DEVICE_ID;
+#endif
+
+    if (_device_id <= 0) {
+        nvs_handle_t nvs_h;
+        int32_t dev_id;
+
+        nvs_open("can_1", NVS_READWRITE, &nvs_h);
+        if (nvs_get_i32(nvs_h, "DEVICE_ID", &dev_id) == ESP_OK) {
+            _device_id = dev_id;
+        }
+    }
+}
+
+void init()
+{
+    load_device_config();
+
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
+
+    app_mode = get_app_mode();
+
+    while (!_device_id) {
+        ESP_LOGE(LTAG, "DEVICE_ID not set...");
+        TaskDelay(1000);
+    }
+
+    ESP_LOGI(LTAG, "DEVICE_ID  %d", _device_id);
+
+    on_init();
 
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 }
@@ -760,13 +805,16 @@ void run_application()
 
 void app_main(void)
 {
+    init_nvs();
     init();
 
 #ifndef SIGNAL_MONITOR
-    can can(GPIO_NUM_21, GPIO_NUM_22);
-    // can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
+    if (_device_id == 11)
+        can can(GPIO_NUM_21, GPIO_NUM_22, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19);
+    else
+        can can(GPIO_NUM_21, GPIO_NUM_22);
 
-    can::start(can::speed_t::_100KBITS, TWAI_MODE_NORMAL);
+    can::start(can::speed_t::_83_3KBITS, TWAI_MODE_NORMAL);
 #endif
 
     ESP_LOGI(LTAG, "application mode %s\n", app_mode_names[(int)app_mode + 1]);
@@ -779,7 +827,7 @@ void app_main(void)
     }
 
 #ifdef SIGNAL_MONITOR
-    raw_signal = new Signal(GPIO_NUM_22, 10000000, 9000, 51000);
+    raw_signal = new Signal(GPIO_NUM_22, 10000000, 11000, 61000);
     signal_thread.run();
 #endif
 
@@ -803,4 +851,19 @@ void app_main(void)
 
     start_web_rx_task();
 
+    // thread_ctl prformance_thread([](thread_funct_args& args) {
+    //     while(1)
+    //     {
+    //         auto hs = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    //         auto lhs = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+
+    //         ESP_LOGI("heap free", "%d, lb:%d", hs, lhs);
+    //         PrintTasksState();
+
+    //         vTaskDelay(1 * 5000 / portTICK_PERIOD_MS);
+    //     }
+    // }
+    // , true, "PerfRX", NULL, 0x1000, false, 9);
+
+    // ESP_LOGE(LTAG, "%d", sizeof(entrie));
 }
