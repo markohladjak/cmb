@@ -11,7 +11,11 @@
 #include "esp_eth.h"
 #include <atomic>
 
+#include "Script.h"
+
 #define RX_SIZE          (1500)
+
+#define DATA_PATH   "/storage/ui/"
 
 httpd_handle_t http::_server = nullptr;
 SemaphoreHandle_t http::_send_mutex  = xSemaphoreCreateMutex();
@@ -191,16 +195,41 @@ esp_err_t http::request_handler_ws(httpd_req_t *req)
     ws_pkt.payload = _rx_buf;
     ws_pkt.type = HTTPD_WS_TYPE_BINARY;
 
-    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, RX_SIZE);
-    
+    esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
+    // ws_pkt.payload = new uint8_t[ws_pkt.len];
+    ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+    // esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, RX_SIZE);
+
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "httpd_ws_recv_frame failed to get frame len with %d", ret);
+        ESP_LOGE(TAG, "httpd_ws_recv_frame failed to get frame len with %d", ws_pkt.len);
         return ret;
     }
 
-    // ESP_LOGI(TAG, "Got packet type: %d  with message: %s", ws_pkt.type, ws_pkt.payload);
+    ESP_LOGI(TAG, "Got packet type: %d  len: %d  final:%d", ws_pkt.type, ws_pkt.len, ws_pkt.final);
 
-    xQueueSend(_rx_task_queue, _rx_buf, 0/*portMAX_DELAY*/);
+    // xQueueSend(_rx_task_queue, _rx_buf, 0/*portMAX_DELAY*/);
+    xQueueSend(_rx_task_queue, ws_pkt.payload, 0/*portMAX_DELAY*/);
+
+    // delete ws_pkt.payload;
+
+    if (((dtp_message*)ws_pkt.payload)->get_type() == DTPT_RUN_SCRIPT)
+    {
+        ESP_LOGE("RUN SCRIPT", "len: %d", ws_pkt.len);
+        int i = 0;
+
+        printf("\n");
+        for (int i=0; i<ws_pkt.len; i++)
+            printf("%0x ", ws_pkt.payload[i]);
+        printf("\n");
+        while (14 + 20 * i < ws_pkt.len) {
+            auto e = ((entrie*)(ws_pkt.payload + 14 + 20 * i++));
+            ESP_LOGE("    delay", "%ld", e->delay);
+            ESP_LOGE("    repeat", "%d", e->repeat);
+            ESP_LOGE("    identifier", "%lx", e->identifier);
+            ESP_LOGE("    data_length_code", "%d", e->data_length_code);
+            ESP_LOGE("    data", "%0X %0X %0X %0X %0X %0X %0X %0X", e->data[0], e->data[1], e->data[2], e->data[3], e->data[4], e->data[5], e->data[6], e->data[7]);
+        }
+    }
 
     return ret;
 }
@@ -214,7 +243,7 @@ esp_err_t http::request_handler_file_get(httpd_req_t *req, char* file_name)
 
     FILE* f = fopen(file_name, "r");
     if (f == NULL) {
-        ESP_LOGE(TAG, "Failed to open file for reading");
+        ESP_LOGE(TAG, "Failed to open file for reading \"%s\"", file_name);
         return ESP_FAIL;
     }
     char buf[0x1000];
@@ -239,28 +268,28 @@ esp_err_t http::request_handler_http(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
 
-    return request_handler_file_get(req, "/httpsrc/ws_test.html");
+    return request_handler_file_get(req, DATA_PATH "ws_test.html");
 }
 
 esp_err_t http::request_handler_ico(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "image/ico");
 
-    return request_handler_file_get(req, "/httpsrc/favicon.ico");
+    return request_handler_file_get(req, DATA_PATH "favicon.ico");
 }
 
 esp_err_t http::request_handler_jquery(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
 
-    return request_handler_file_get(req, "/httpsrc/jquery-3.3.1.min.js");
+    return request_handler_file_get(req, DATA_PATH "jquery-3.3.1.min.js");
 }
 
 esp_err_t http::request_handler_w3(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
 
-    return request_handler_file_get(req, "/httpsrc/w3.js");
+    return request_handler_file_get(req, DATA_PATH "w3.js");
 }
 
 #define FILE_PATH_MAX (15 + CONFIG_SPIFFS_OBJ_NAME_LEN)
@@ -488,7 +517,7 @@ bool http::is_ready()
 
 void http::send_async(uint8_t *data, size_t len)
 {
-    static auto pkt = new httpd_ws_frame_t {
+    httpd_ws_frame_t pkt = {
         .final = 0,
         .fragmented = 0,
         .type = HTTPD_WS_TYPE_BINARY,
@@ -502,7 +531,11 @@ void http::send_async(uint8_t *data, size_t len)
         return;
     }
 
-    esp_err_t err = httpd_ws_send_frame_async(_server, _sockfd, pkt);
+    // ESP_LOGE("cmb", "ms type %d, sock_fd:%d", data[12], _sockfd);
+    // std::for_each(pkt.payload, pkt.payload + pkt.len, [](const uint8_t&b) { printf("%x ", b); });
+    // printf("\n");
+
+    esp_err_t err = httpd_ws_send_frame_async(_server, _sockfd, &pkt);
 
     if (err != ESP_OK) 
         ESP_LOGE("cmb", "send_async error %s", esp_err_to_name(err));

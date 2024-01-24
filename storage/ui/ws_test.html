@@ -23,7 +23,7 @@
 
         vertical-align: top;
 
-        width: 335px;
+        /* width: 335px; */
     }
 
     .toggle-button {
@@ -70,6 +70,7 @@
         /* border: red 3px solid;  */
         overflow: hidden;
         margin: 0;
+        background-color: rgb(73, 56, 56);
     }
 
     /* .main_block { */
@@ -149,7 +150,7 @@
 <script src="https://code.jquery.com/jquery-3.5.0.js"></script> -->
 <script src="w3.js"></script>
 <script src="jquery-3.3.1.min.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <body>
     <div style="background-color: rgb(116, 42, 143); height: 50px; width: 100%; position: fixed; top: 0px;"></div>
@@ -157,12 +158,13 @@
         <div class="side_bar">
             <div id="script_block">
                 <div>Script</div>
-                <textarea id="script_data_block" class="data_block" rows="25">
-43F 8 10 60 61 ff 00 00 00 00
-                </textarea>
+                <textarea id="script_data_block" class="data_block" rows="25">43F 8 10 60 61 ff 00 00 00 00</textarea>
                 <!-- <input id="msg_to_send" type="text" value="123AA678 8 10 1A 2B 7C AD EF FF 44"> -->
-                <button onclick="onClickSend()">Transmit selected</button>
-                <button onclick="onClickSendAll()">Transmit All</button>
+                <button id="ID_SendMsg" onclick="onClickSend('One')">Transmit selected</button>
+                <button id="ID_SendAllMsg" onclick="onClickSend('All')">Transmit All</button>
+                <div>
+                <button onclick="onRunScript()">Run Script</button>
+            </div>
             </div>
             <div id="update_form">
                 <form enctype="multipart/form-data">
@@ -173,7 +175,7 @@
                 <progress></progress>
             </div>
         </div>
-        <div class="common_block">
+        <div id="commonBlock" class="common_block">
             <div id="devices_view_container">
                 <template id="twai_data_view_template">
                     <div class="twai_data_view_style data_block">
@@ -181,6 +183,9 @@
                         <div class="list_view"></div>
                     </div>
                 </template>
+            </div>
+            <div style="background-color: #adb5e1;">
+                <canvas style="background-color: antiquewhite; width: 100%; height: 200px;" id="myChart"></canvas>
             </div>
         </div>
     </div>
@@ -231,15 +236,14 @@
     socket.addEventListener('open', function (event) {
         socket.send('8888888888888888');
 
-        let status = $("#tr_net_status")[0];
-        status.textContent = "connected";
+        updateWSStatus();
 
         OnConnectionOpened();
     });
 
     // Listen for messages
     var kpt_count = 0;
-    socket.addEventListener('message', function (event) {
+    socket.onmessage = (event) => {
         proccess_message(event.data);
 
         kpt_count++;
@@ -252,14 +256,26 @@
             count += event.data.byteLength;
             m_count++;
         }
-    }, );
+    };
+
+    socket.onclose = function (event) {
+        updateWSStatus();
+    };
 
     socket.onerror = function(event) {
-        console.error("WebSocket error observed:", event);
-
-        let status = $("#tr_net_status")[0];
-        status.textContent = "disconnected";
+        updateWSStatus();
     };
+
+    function updateWSStatus() {
+        let status = $("#tr_net_status")[0];
+
+        switch(socket.readyState){
+            case 0: status.textContent = "CONNECTING"; break;
+            case 1: status.textContent = "OPEN"; break;
+            case 2: status.textContent = "CLOSING"; break;
+            case 3: status.textContent = "CLOSED"; break;
+        }
+    }
 
     let dataRow = { "pkgs" : [
         ]};
@@ -270,14 +286,19 @@
         let type = dv.getUint8(12);
         let dev_id = dv.getUint8(13);
 
-        if (type == 8)
-            printData(msg);
-
-        if (type == 1)
-            createDeviceView(dev_id);
-
-        if (type == 9)
-            printSignal(msg);
+        switch (type) {
+            case 8:
+                printData(msg);
+                break;
+            case 1:
+                createDeviceView(dev_id);
+                break;
+            case 9:
+                printSignal(msg);
+                break;
+            default:
+                console.log("Unknown message type");
+        }
     }
 
     function createDeviceView(dev_id)
@@ -368,14 +389,63 @@
     {
         console.log(msg);
         console.log("NEC frame start---");
+        
+        let dv = new DataView(msg);
+
+        // let tl = dv.getUint32(0, true);
+        // let th = dv.getUint32(4, true);
+        // let id = dv.getUint32(8, true);
+        // let type = dv.getUint8(12);
+        // let dev_id = dv.getUint8(13);
+        let num_words = dv.getUint16(14, true);
+
         const w = new Uint16Array(msg, 16, (msg.byteLength - 16) / 2);
 
-        for (let i = 0; i < 8; i+=2) {
-            console.log('{', w[i] >> 15, ':', w[i] & 0x7FFF, '},{', w[i+1] >> 15, ':', w[i+1] & 0x7FFF, '}');
+        let ms = "";
+
+        let chartY = 0;
+        let chartX = 0;
+
+        let duration0, duration1, level0, level1;
+        let dt;
+
+        myChart.data.datasets[0].data = [{ y: 0, x: 0 }];
+
+        for (let i = 0; i < num_words * 2; i+=2) {
+            duration0 = w[i] & 0x7FFF;
+            duration1 = w[i+1] & 0x7FFF;
+            level0 = w[i] >> 15;
+            level1 = w[i+1] >> 15;
+            ms += `{ ${level0} : ${duration0} },{ ${level1} : ${duration1} }<br>\n`;
+        }
+
+        for (let i = 0; i < num_words * 2; i++) {
+            level = w[i] >> 15;
+            duration = w[i] & 0x7FFF;
+
+            if (chartY != level) {
+                chartY = level;
+                dt = { y: chartY, x: chartX };
+                myChart.data.datasets[0].data.push(dt);
+
+            }
+
+            chartX += duration;
+            dt = { y: chartY, x: chartX };
+            myChart.data.datasets[0].data.push(dt);
+
+            myChart.update();
+
+            // if (chartX > 10000)
+            //     chartX = 0;
         }
         
+        console.log(ms);
         console.log("---NEC frame end:");
+
+        $('#commonBlock').append('<p>' + ms + '</p>');
     }
+
 
     // socket.add
     // setInterval(myTimer, 1000);
@@ -434,83 +504,136 @@
         return textarea.value.substr(0, textarea.selectionStart).split("\n").length;
     }
 
-    function onClickSend()
+    const dtp_message_t = {
+        DTPT_INFO: 1,
+        DTPT_REQUEST: 2,
+        DTPT_CAN_DATA: 8,
+        DTPT_SIGNAL_DATA: 9,
+        DTPT_RUN_SCRIPT: 10,
+    };
+
+    const MessageHeaderLenght = 14;
+    const DEVICE_ID = 254;
+
+    function FillMessageHeader(msg_buff, tl, th, id, type, dev_id)
     {
-        const text = $("#script_data_block").val();
-        const curet = $("#script_data_block")[0].selectionStart;
-        const row = text.substr(0, curet).split("\n").length;
-        const rows = text.split("\n");
+        let dv = new DataView(msg_buff);
 
-        msg = rows[row-1];
+        dv.setUint32(0, tl, true);
+        dv.setUint32(4, th, true);
+        dv.setUint32(8, id, true);
+        dv.setUint8(12, type);
+        dv.setUint8(13, dev_id);
+    }
 
-        // const re = /\s/
-        data = msg.split(' ');
+    function CreateMessage(tl, th, id, type, dev_id, flags, identifier, length, data)
+    {
+        let buff = new ArrayBuffer(32);
+        let dv = new DataView(buff);
 
-        buff = new ArrayBuffer(32);
-        dv = new DataView(buff);
+        FillMessageHeader(buff, tl, th, id, type, dev_id);
 
-        dv.setUint32(0, 0, true);                       // tl
-        dv.setUint32(4, 0, true);                       // th
-        dv.setUint32(8, sended_msd_id++, true);         // id
-        dv.setUint8(12, 8);                             // type
-        dv.setUint8(13, 254);                           // dev_id
-
-        dv.setUint32(16, 0, true);                      // flags
-        dv.setUint32(20, parseInt(data[0], 16), true);   // identifier
-        dv.setUint8(24, parseInt(data[1]));            // data_length_code
-
+        dv.setUint32(16, flags, true);
+        dv.setUint32(20, identifier, true);
+        dv.setUint8(24, length);
 
         for (let i = 0; i < data[1]; i++) {
-            pos = 2 + i;
+            let pos = 2 + i;
             if (i < 7)
                 dv.setUint8(25 + i, parseInt(data[pos], 16));
             else
                 dv.setUint8(19, parseInt(data[pos], 16));
         }
- 
+
         console.log(data, dv);
-        socket.send(buff);
+
+        return buff;
     }
 
-    function onClickSendAll()
+    function GetScript()
     {
         const text = $("#script_data_block").val();
         const curet = $("#script_data_block")[0].selectionStart;
-        const row = text.substr(0, curet).split("\n").length;
+        const sel_row = text.substr(0, curet).split("\n").length - 1;
         const rows = text.split("\n");
 
-        rows.forEach(msg => {
-            // const re = /\s/
-            data = msg.split(' ');
-
-            buff = new ArrayBuffer(32);
-            dv = new DataView(buff);
-
-            dv.setUint32(0, 0, true);                       // tl
-            dv.setUint32(4, 0, true);                       // th
-            dv.setUint32(8, sended_msd_id++, true);         // id
-            dv.setUint8(12, 8);                             // type
-            dv.setUint8(13, 254);                           // dev_id
-
-            dv.setUint32(16, 0, true);                      // flags
-            dv.setUint32(20, parseInt(data[0], 16), true);   // identifier
-            dv.setUint8(24, parseInt(data[1]));            // data_length_code
-
-
-            for (let i = 0; i < data[1]; i++) {
-                pos = 2 + i;
-                if (i < 7)
-                    dv.setUint8(25 + i, parseInt(data[pos], 16));
-                else
-                    dv.setUint8(19, parseInt(data[pos], 16));
-            }
-    
-            // console.log(data, dv);
-            socket.send(buff);
-        });
-
+        return [rows, sel_row];
     }
 
+    function onClickSend(how)
+    {
+        const [msgs, selected] = GetScript();
+
+        let st = how == 'One' ? selected : 0;
+        let ed = how == 'One' ? selected : msgs.length -1;
+
+        for (let i = st; i <= ed; i++) {
+            let msg = msgs[i].replace(/\s+/g, ' ');
+            let data = msg.trim().split(' ');
+
+            buff = CreateMessage(0, 0, sended_msd_id++, dtp_message_t.DTPT_CAN_DATA, 254, 
+                                    0, parseInt(data[0], 16), parseInt(data[1]), data);
+
+            socket.send(buff);
+        }
+    }
+
+    function ParseMessage(msg)
+    {
+        let m = msg.replace(/\s+/g, ' ');
+        let d = msg.trim().split(' ');
+        
+        let repeat = 1;
+        let delay = 0;
+
+        d.forEach(el => {
+            if (el[0] == "r") repeat = parseInt(el.slice(1));
+            if (el[0] == "d") delay = parseInt(el.slice(1));
+        });
+
+        return { id: parseInt(d[0], 16), len: parseInt(d[1]), 
+                 d0: parseInt(d[2], 16), d1: parseInt(d[3], 16), d2: parseInt(d[4], 16), d3: parseInt(d[5], 16), 
+                 d4: parseInt(d[6], 16), d5: parseInt(d[7], 16), d6: parseInt(d[8], 16), d7: parseInt(d[9], 16),
+                 delay: delay, repeat: repeat };
+    }
+
+    function ParseScript()
+    {
+        const [msgs, selected] = GetScript();
+
+        let arr = new ArrayBuffer(msgs.length * 20 + MessageHeaderLenght);
+        let dv = new DataView(arr);
+
+        FillMessageHeader(arr, 0, 0, 0, dtp_message_t.DTPT_RUN_SCRIPT, DEVICE_ID);
+
+        for (let i=0; i<msgs.length; i++) {
+            let m = ParseMessage(msgs[i]);
+            let o = i * 20 + MessageHeaderLenght;
+
+            dv.setUint32(o+0, m.delay, true);
+            dv.setUint32(o+4, m.id, true);
+            dv.setUint8(o+8, m.d0, true);
+            dv.setUint8(o+9, m.d1, true);
+            dv.setUint8(o+10, m.d2, true);
+            dv.setUint8(o+11, m.d3, true);
+            dv.setUint8(o+12, m.d4, true);
+            dv.setUint8(o+13, m.d5, true);
+            dv.setUint8(o+14, m.d6, true);
+            dv.setUint8(o+15, m.d7, true);
+            dv.setUint8(o+16, m.len, true);
+            dv.setUint16(o+18, m.repeat, true);
+        };
+
+        return arr;
+    }
+
+    function onRunScript()
+    {
+        let buff = ParseScript();
+
+        socket.send(buff);
+    }
+    
     function OnConnectionOpened()
     {
         buff = new ArrayBuffer(32);
@@ -519,7 +642,7 @@
         dv.setUint32(0, 0, true);                       // tl
         dv.setUint32(4, 0, true);                       // th
         dv.setUint32(8, sended_msd_id++, true);         // id
-        dv.setUint8(12, 2);                             // type
+        dv.setUint8(12, dtp_message_t.DTPT_REQUEST);    // type
         dv.setUint8(13, 254);                           // dev_id
 
         console.log(dv);
@@ -531,7 +654,7 @@
             return;
 
         if (e.keyCode == 13) {
-            onClickSend();
+            onClickSend("One");
             e.preventDefault();
         }
     });
@@ -592,6 +715,44 @@
             processData: false,
         });
     });
+
+
+    const chart_ctx = document.getElementById('myChart');
+
+    var myChart = new Chart(chart_ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Simple Line Chart',
+                    data: [
+                        { y: 0, x: 0 },
+                    ],
+                    borderColor: 'blue', // Line color
+                    borderWidth: 1,      // Line width
+                    pointRadius: 0,      // Point radius
+                    pointBackgroundColor: 'red',  // Point color
+                }]
+            },
+            options: {
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
+                        min: 0,  // Set the minimum x-axis value
+                        // max: 10000  // Set the maximum x-axis value
+                    },
+                    y: {
+                        min: -0.1,
+                        max: 1.1   // Adjust the maximum y-axis value based on your data
+                    }
+                }
+            }
+        });
+
+        myChart.options.animation = false; // disables all animations
+        myChart.options.animations.colors = false; // disables animation defined by the collection of 'colors' properties
+        myChart.options.animations.x = false; // disables animation defined by the 'x' property
+        myChart.options.transitions.active.animation.duration = 0; // disables the animation for 'active' mode
 </script>
 </body>
 

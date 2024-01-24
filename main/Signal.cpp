@@ -41,7 +41,7 @@ void Signal::init()
         .gpio_num = _gpio_num,
         .clk_src = RMT_CLK_SRC_APB,
         .resolution_hz = _resolution_hz,
-        .mem_block_symbols = 64,
+        .mem_block_symbols = 128,
         // .flags.with_dma = 1
     };
     
@@ -72,6 +72,16 @@ void Signal::init()
 
 bool Signal::receive(rmt_symbol_word_t *buffer, size_t *data_len, TickType_t ticks_to_wait)
 {
+    for (int i=0; i<32; i++) {
+        buffer[i].level0 = 0;
+        buffer[i].level1 = 1;
+        buffer[i].duration0 =  4 * (rand() % 5 + 1) * 10;
+        buffer[i].duration1 =  4 * (rand() % 5 + 1) * 10;
+    }
+
+    *data_len = 32;
+    return true;
+
     if (!uxQueueMessagesWaiting(_receive_queue))
         ESP_ERROR_CHECK(rmt_receive(_rx_channel, buffer, *data_len, &_receive_config));
 

@@ -8,7 +8,7 @@
         "interface/ftdi/esp32_devkitj_v1.cfg",
         "target/esp32.cfg"
     ],
-    "idf.port": "/dev/cu.usbserial-021241D8",
+    "idf.port": "/dev/cu.usbserial-02QHQWVO",
     "idf.pythonBinPath": "/opt/local/bin/python",
     "idf.toolsPath": "/Users/rem/.espressif",
     "idf.flashType": "UART",
@@ -80,6 +80,28 @@
         "gpio.h": "c",
         "task.h": "c",
         "sdkconfig.h": "c",
-        "led_strip.h": "c"
+        "led_strip.h": "c",
+        "regex": "cpp",
+        "bitset": "cpp",
+        "*.contiki": "cpp",
+        "*.lwip": "cpp",
+        "socket": "cpp",
+        "bit": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "forward_list": "cpp",
+        "buffer": "cpp",
+        "executor": "cpp",
+        "internet": "cpp",
+        "io_context": "cpp",
+        "netfwd": "cpp",
+        "timer": "cpp",
+        "numbers": "cpp",
+        "semaphore": "cpp",
+        "stop_token": "cpp",
+        "esp_timer.h": "c",
+        "source_location": "cpp",
+        "esp_netif_private.h": "c",
+        "esp_netif.h": "c"
     }
 }

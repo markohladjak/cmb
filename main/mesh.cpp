@@ -17,14 +17,14 @@ QueueHandle_t _send_mutex = xSemaphoreCreateMutex();
 mesh::status_t mesh::_status = mesh::status_t::UNKNOWN;
 
 
-// string mesh::_router_ssid = "Tenda_0AD898";
-// string mesh::_router_pw = "12345678";
+string mesh::_router_ssid = "Tenda_0AD898";
+string mesh::_router_pw = "12345678";
 // string mesh::_router_ssid = "DiamandNC";
 // string mesh::_router_pw = "nodesAdmin";
 // string mesh::_router_ssid = "TP-Link_982C";
 // string mesh::_router_pw = "33188805";
-string mesh::_router_ssid = "BV8800";
-string mesh::_router_pw = "1234567890";
+// string mesh::_router_ssid = "BV8800";
+// string mesh::_router_pw = "1234567890";
 
 int	mesh::_router_chennel = 0;
 
@@ -222,6 +222,9 @@ void mesh::init() {
     ESP_ERROR_CHECK(esp_mesh_set_max_layer(25));
     ESP_ERROR_CHECK(esp_mesh_set_vote_percentage(1));
     ESP_ERROR_CHECK(esp_mesh_set_xon_qsize(128));
+
+    ESP_ERROR_CHECK(esp_mesh_set_self_organized(true, true));
+
 #ifdef CONFIG_MESH_ENABLE_PS
     /* Enable mesh PS function */
     ESP_ERROR_CHECK(esp_mesh_enable_ps());
@@ -249,7 +252,6 @@ void mesh::init() {
     cfg.mesh_ap.max_connection = _max_connection;
     memcpy((uint8_t *) &cfg.mesh_ap.password, _mesh_pw.c_str(), _mesh_pw.size());
     ESP_ERROR_CHECK(esp_mesh_set_config(&cfg));
-
 
     _is_mesh_initialized = true;
 }

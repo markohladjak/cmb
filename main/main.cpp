@@ -34,12 +34,20 @@
 #include "indication.hpp"
 #include "Signal.h"
 #include "Script.h"
+#include "utils.h"
+
+#include "esp_vfs_dev.h"
+
+// #include "iostream"
+// #include "../../json/single_include/nlohmann/json.hpp"
 
 extern "C" void app_main(void);
 
 using namespace rutils;
 
-#define DEVICE_ID 28
+// using json = nlohmann::json;
+
+#define DEVICE_ID 20
 int _device_id = 0;
 
 #define CF_UART_ENABLED 1
@@ -139,7 +147,7 @@ void signal_rx_task(thread_funct_args& args);
 thread_ctl twai_thread(twai_rx_task, false, "TwaiRX", NULL, 16384, false, 9);
 
 
-// #define SIGNAL_MONITOR 1
+#define SIGNAL_MONITOR 1
 
 #ifdef SIGNAL_MONITOR
 Signal *raw_signal;
@@ -155,30 +163,31 @@ void TaskDelay(uint16_t ms)
 }
 
 void web_send_work(void *) {
-    static uint8_t data[MSG_SIZE];
+    // static uint8_t data[MSG_SIZE];
+    net_frame frame;
 
-    int64_t count_down = SEND_WORK_TIME * 1000;
+    int64_t count_down = SEND_WORK_TIME;
 
     while (count_down > 0) 
     {
         auto t0 = esp_timer_get_time();
 
-        if ( xQueueReceive(_tx_web_queue, data, count_down / 1000 / portTICK_PERIOD_MS ) == pdPASS)
-            http::send_async(data, MSG_SIZE);
+        if ( xQueueReceive(_tx_web_queue, &frame, count_down / portTICK_PERIOD_MS ) == pdPASS) {
+            http::send_async(frame.data, frame.size);
+
+            delete frame.data;
+        }
 
         count_down -= esp_timer_get_time() - t0;
     }
 
-    // http::queue_work(web_send_work);
     if (http::queue_work(web_send_work) != ESP_OK)
         _web_send_work_done = true;
-
-    // _web_send_work_done = true;
 }
 
-void web_tx(dtp_message& msg)
+void web_tx(net_frame& frame)
 {
-    if (xQueueSend(_tx_web_queue, &msg, 0/*portMAX_DELAY*/) != pdPASS)
+    if (xQueueSend(_tx_web_queue, &frame, 0/*portMAX_DELAY*/) != pdPASS)
         // ESP_LOGE(LTAG, "_tx_web_queue full");
     ;
 
@@ -215,16 +224,20 @@ void twai_rx_task(thread_funct_args& args)
 #ifdef SIGNAL_MONITOR
 void signal_rx_task(thread_funct_args& args) 
 {
-    uint8_t buf[sizeof(msg_signal) + 64 * sizeof(rmt_symbol_word_t)];
-    msg_signal &msg = *new(buf) msg_signal;
+    uint8_t buf[sizeof(msg_signal) + 128 * sizeof(rmt_symbol_word_t)];
+    msg_signal &msg = *new(buf) msg_signal();
     rmt_symbol_word_t *words = (rmt_symbol_word_t*)&msg.bytes_ptr;
 
+    static int m_id = 0;
+    msg.set_id(m_id++);
     msg.set_dev_id(_device_id);
 
     size_t data_len;
 
     while (!args._exit_signal) 
     {
+        TaskDelay(5000);
+
         data_len = sizeof(buf);
 
         if (!raw_signal->receive((rmt_symbol_word_t*)&msg.bytes_ptr, &data_len, portMAX_DELAY)) {
@@ -232,18 +245,17 @@ void signal_rx_task(thread_funct_args& args)
             continue;
         }
 
-        printf("NEC frame start---\r\n");
-        for (size_t i = 0; i < data_len; i++) {
-            printf("{%d:%d},{%d:%d}\r\n", words[i].level0, words[i].duration0,
-                words[i].level1, words[i].duration1);
-        }
-        printf("---NEC frame end: \r\n");
+        // printf("NEC frame start---\r\n");
+        // for (size_t i = 0; i < data_len; i++) {
+        //     printf("{%d:%d},{%d:%d}\r\n", words[i].level0, words[i].duration0,
+        //         words[i].level1, words[i].duration1);
+        // }
+        // printf("---NEC frame end: \r\n");
         // uint8_t *buf = new uint8_t[sizeof(msg_signal) + data->num_symbols * sizeof(rmt_symbol_word_t)]; 
-        // msg.num_bytes = data->num_symbols;
+        // msg.num_words = data->num_symbols;
         // msg.
-        msg.num_bytes = data_len;
-        net->send((uint8_t*)&msg, MSG_SIZE);
-
+        msg.num_words = data_len;
+        net->send((uint8_t*)&msg, sizeof(msg_signal) + data_len * 4);
     }
 }
 #endif
@@ -351,9 +363,15 @@ void net_rx_task(void *arg)
         len = MESH_MPS;
         while (!net->receive(msg_buf, &len)) 
             vTaskDelay(1);
-    
-        int msg_count = len / MSG_SIZE;
+
+        auto msg = (dtp_message*)(msg_buf);
+        auto type = msg->get_type();
+
+        int msg_count = 1;
         int msg_n = 0;
+
+        if (type == DTPT_CAN_DATA)
+            msg_count = len / MSG_SIZE;
 
         while (msg_count--) 
         {
@@ -362,12 +380,16 @@ void net_rx_task(void *arg)
             if (msg->get_dev_id() != _device_id)
                 proccess_message(msg);
 
-            auto t = msg->get_type();
-            if (t == DTPT_CAN_DATA || t == DTPT_INFO)
-                if (net->is_root())
-                    web_tx(*msg);
+            if (type == DTPT_CAN_DATA || type == DTPT_INFO || type == DTPT_SIGNAL_DATA)
+                if (net->is_root()) {
+                    auto b = new uint8_t[len];
+                    memcpy(b, msg, len);
+                    net_frame f = { len, b };
+                    web_tx(f);
+                }
         }
     }
+
     vTaskDelete(NULL);
 }
 
@@ -419,7 +441,7 @@ bool twai_msg_receive(twai_message_t &msg)
 
 void on_msg_received(msg_can_data& msg)
 {
-    trace.add_entrie(msg);
+    trace.AddEntrie(msg);
 }
 
 void twai_rx(void* arg)
@@ -593,18 +615,6 @@ void print_state_report()
         c = 0;
         tl = t0;
     }
-
-    //     auto t0 = esp_timer_get_time();
-    // static int64_t tl = t0;
-
-    // if (t0 - tl > 1000000){
-    //     ESP_LOGW(LTAG, "heep size: %d    messages: %d"
-    //         , esp_get_free_heap_size()
-    //         , uxQueueMessagesWaiting(_tx_web_queue));
-        
-    //     tl = t0;
-    // }
-
 }
 
 void PrintTasksState()
@@ -666,6 +676,7 @@ app_mode_t get_app_mode()
 
     if (app_mode_source == app_mode_source_t::APP_MODE_SOURCE_NVS)
         return app_mode_t::APP_MODE_DIAGNOSTIC_MESH;
+        // return app_mode_t::APP_MODE_DIAGNOSTIC;
 
     gpio_config_t io_conf = {
         .pin_bit_mask = ((1ULL << MODE_SELECT_PIN0) | (1ULL << MODE_SELECT_PIN1)),
@@ -698,8 +709,8 @@ void init_spiffs()
     ESP_LOGI(LTAG, "Initializing SPIFFS");
 
     esp_vfs_spiffs_conf_t conf = {
-      .base_path = "/httpsrc",
-      .partition_label = NULL,
+      .base_path = "/storage",
+      .partition_label = "storage",
       .max_files = 5,
       .format_if_mount_failed = true
     };
@@ -789,7 +800,8 @@ void init_net()
     }
 
                                     // ??????? Wrong parameter order
-    _tx_web_queue = xQueueCreate(TX_WEB_QUEUE_SIZE, MSG_SIZE);
+    // _tx_web_queue = xQueueCreate(TX_WEB_QUEUE_SIZE, MSG_SIZE);
+    _tx_web_queue = xQueueCreate(TX_WEB_QUEUE_SIZE, sizeof(net_frame));
 
     // _tx_mesh_queue = xQueueCreate(MSG_SIZE, TX_MESH_QUEUE_SIZE);
 
@@ -814,7 +826,7 @@ void app_main(void)
     else
         can can(GPIO_NUM_21, GPIO_NUM_22);
 
-    can::start(can::speed_t::_83_3KBITS, TWAI_MODE_NORMAL);
+    can::start(can::speed_t::_250KBITS, TWAI_MODE_NORMAL);
 #endif
 
     ESP_LOGI(LTAG, "application mode %s\n", app_mode_names[(int)app_mode + 1]);
@@ -826,13 +838,13 @@ void app_main(void)
         return;
     }
 
-#ifdef SIGNAL_MONITOR
-    raw_signal = new Signal(GPIO_NUM_22, 10000000, 11000, 61000);
-    signal_thread.run();
-#endif
-
     init_spiffs();
     init_net();
+
+#ifdef SIGNAL_MONITOR
+    raw_signal = new Signal(GPIO_NUM_22, 10000000, 400, 610000);
+    signal_thread.run();
+#endif
 
     http *http_server = new http();
     FirmwareUpdate *update = new FirmwareUpdate(http_server);
@@ -866,4 +878,31 @@ void app_main(void)
     // , true, "PerfRX", NULL, 0x1000, false, 9);
 
     // ESP_LOGE(LTAG, "%d", sizeof(entrie));
+
+    // Using (raw) string literals and json::parse
+    // json ex1 {
+    //     {"pi", 3.141},
+    //     {"happy", true}
+    //     };
+
+    // ex1.dump();
+
+
+    // esp_app_desc
+
+
+    // auto ss = new Script(100);
+    // ss->Run();
+
+    // int ar0[3] { 1, 2, 3 };
+    // int ar1[3] { *ar0 };
+
+    // esp_vfs_dev_uart_use_driver(0);
+    // while(1) {
+    //     int ch = fgetc(stdin);
+    //     if (ch != EOF)
+    //         printf("%c", ch);
+    //     else 
+    //         TaskDelay(1);
+    // }
 }

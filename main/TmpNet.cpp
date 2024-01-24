@@ -68,9 +68,9 @@ void TmpNet::OnLayerChangedCallbackRegister(_layer_changed_callback_funct_t func
 void TmpNet::OnIsRootCallbackRegister(_is_root_callback_funct_t funct)
 {}
 
-static _is_connected_callback_funct_t is_connected_callback_funct_t;
+static _is_connected_callback_funct_t is_connected_callback_funct;
 void TmpNet::OnIsConnectedCallbackRegister(_is_connected_callback_funct_t funct)
-{ is_connected_callback_funct_t = funct; }
+{ is_connected_callback_funct = funct; }
 
 void TmpNet::OnIsDisconnectedCallbackRegister(_is_disconnected_callback_funct_t funct)
 {}
@@ -92,7 +92,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
     } else if (event_id == WIFI_EVENT_AP_START) {
         ESP_LOGI(TAG, "soft_ap started");
-        is_connected_callback_funct_t();
+        is_connected_callback_funct();
     }
 }
 
@@ -116,17 +116,30 @@ void wifi_init_softap(void)
             .ssid_len = 0,
             .channel = EXAMPLE_ESP_WIFI_CHANNEL,
             .authmode = WIFI_AUTH_WPA_WPA2_PSK,
-            .max_connection = EXAMPLE_MAX_STA_CONN,
+            .max_connection = 1,
             .pmf_cfg = {
                     .required = false,
             },
         },
     };
     // memset()
-    memcpy((uint8_t *) wifi_config.ap.ssid, EXAMPLE_ESP_WIFI_SSID, strlen(EXAMPLE_ESP_WIFI_SSID) + 1);
-    wifi_config.ap.ssid_len = strlen(EXAMPLE_ESP_WIFI_SSID);
+
     
-    // memcpy((uint8_t *) &wifi_config.router.password, _router_pw.c_str(), _router_pw.size());
+
+    // wifi_config.ap.ssid_len = strlen(EXAMPLE_ESP_WIFI_SSID);
+    // strcpy((uint8_t *) wifi_config.ap.ssid, EXAMPLE_ESP_WIFI_SSID);
+    // strcpy(wifi_config.ap.ssid + wifi_config.ap.ssid_len, )
+    
+    uint64_t chipid {};
+    esp_base_mac_addr_get((uint8_t*)&chipid);
+
+    std::reverse((uint8_t*)&chipid, ((uint8_t*)&chipid) + 6);
+
+    sprintf((char *)wifi_config.ap.ssid, "%s_%012llX", EXAMPLE_ESP_WIFI_SSID, chipid);
+
+
+    memcpy((uint8_t *) wifi_config.ap.password, EXAMPLE_ESP_WIFI_PASS, strlen(EXAMPLE_ESP_WIFI_PASS) + 1);
+
 
     if (strlen(EXAMPLE_ESP_WIFI_PASS) == 0) {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;

@@ -15,6 +15,12 @@ enum dtp_message_t {
 
 class msg_can_data;
 
+struct net_frame
+{
+    uint16_t size;
+    uint8_t* data;
+};
+
 class dtp_message {
 public:
     int64_t _time_stamp;
@@ -40,7 +46,7 @@ public:
     uint8_t dev_id() { return _dev_id; }
     void set_dev_id(uint8_t dev_id) { _dev_id = dev_id; }
     uint8_t get_dev_id() const { return _dev_id; }
-    void set_time_stamp() { _time_stamp = 0; }
+    void set_time_stamp() { _time_stamp = 0xF8F8F8F8F8F8F8F8; }
     void set_type(uint8_t type) { _type = type; }
     uint8_t get_type() const { return _type; }
     int32_t get_id() const { return _id; }
@@ -79,7 +85,7 @@ public:
 
 struct msg_signal: public dtp_message
 {
-    uint16_t num_bytes;  
+    uint16_t num_words;  
     uint8_t bytes_ptr;
     
     msg_signal() {
